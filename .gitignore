@@ -1,0 +1,47 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Dependency directories
+node_modules/
+
+# Environment variables
+.env
+.env.*
+
+# Build directories
+dist/
+build/
+dist-ssr
+dev-dist/
+
+# Coverage directory
+coverage/
+
+# Cache directories
+.cache/
+
+# Editor directories and files
+.vscode/
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+*.sw?
+*.local
+
+# Playwright testing artifacts
+.playwright-mcp
+
+# Claude files
+.claude/
+
+# Documents
+ docs
