@@ -41,7 +41,8 @@ coverage/
 .playwright-mcp
 
 # Claude files
-.claude/
+.claude/settings.local.json
+CLAUDE.local.md
 
 # Documents
  docs
