@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { CLASSES, PARTNER_FIELDS, SALE_ORDER_FIELDS } from "./fields.js";
+import { CLASSES, PARTNER_FIELDS, SALE_ORDER_FIELDS } from "./fields.ts";
 
 const BASE_URL = process.env.AXELOR_BASE_URL;
 let sessionCookie = "";
