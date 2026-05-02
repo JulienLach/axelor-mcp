@@ -3,6 +3,7 @@
 export const CLASSES = {
     partner: "com.axelor.apps.base.db.Partner",
     saleOrder: "com.axelor.apps.sale.db.SaleOrder",
+    product: "com.axelor.apps.base.db.Product",
 } as const;
 
 // ── Champs par modèle ─────────────────────────────────────────────────────────
@@ -40,6 +41,40 @@ export const PARTNER_FIELDS = [
     "deliveryDelay",
     "headOfficeAddress",
     "importOrigin",
+    "createdOn",
+    "updatedOn",
+];
+
+export const PRODUCT_FIELDS = [
+    "id",
+    "code",
+    "fullName",
+    "name",
+    "subtitle",
+    "description",
+    "internalDescription",
+    "productTypeSelect",
+    "productSubTypeSelect",
+    "salePrice",
+    "saleCurrency",
+    "costPrice",
+    "purchasePrice",
+    "avgPrice",
+    "unit",
+    "salesUnit",
+    "purchasesUnit",
+    "sellable",
+    "purchasable",
+    "isModel",
+    "procurementMethodSelect",
+    "saleSupplySelect",
+    "standardDelay",
+    "productFamily",
+    "productCategory",
+    "isActivity",
+    "archived",
+    "startDate",
+    "endDate",
     "createdOn",
     "updatedOn",
 ];

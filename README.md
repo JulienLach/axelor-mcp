@@ -1,39 +1,31 @@
 # Axelor MCP — Connecteur Axelor pour Claude Desktop
 
-Ce projet permet à Claude Desktop d'interroger directement votre instance Axelor : rechercher des partenaires, consulter des commandes clients, etc.
+Ce projet permet à Claude d'interroger directement votre instance Axelor : rechercher des partenaires, consulter et créer des commandes clients, etc.
+
+## Table des matières
+
+- [Developer](#developer)
+- [Installation chez un client Windows](#installation-chez-un-client-windows)
+- [Outils disponibles](#outils-disponibles)
 
 ---
 
-## Prérequis
+## Developer
 
-Avant de commencer, installer dans cet ordre :
+### Prérequis
 
-1. **Node.js v24 LTS** → [Télécharger ici](https://nodejs.org/en/download) (choisir « Windows Installer »)
-2. **Claude Desktop** → [Télécharger ici](https://claude.ai/download)
+1. **Node.js v24 LTS** → [Télécharger ici](https://nodejs.org/en/download)
+2. **Claude Code** (CLI)
 
----
+### Installation
 
-## Installation
-
-### 1. Télécharger le projet
-
-Cliquer sur le bouton vert **Code** → **Download ZIP**, puis extraire le dossier où vous voulez (par exemple `C:\axelor-mcp`).
-
-Ou via Git :
 ```bash
-git clone <url-du-repo>
-```
-
-### 2. Installer les dépendances
-
-Ouvrir un terminal dans le dossier du projet et exécuter :
-```bash
+git clone <url-du-repo> C:\Users\<NomUtilisateur>\Documents\axelor-mcp
+cd C:\Users\<NomUtilisateur>\Documents\axelor-mcp
 npm install
 ```
 
-### 3. Créer le fichier de configuration
-
-Créer un fichier nommé `.env` à la racine du projet avec ce contenu :
+Créer un fichier `.env` à la racine :
 
 ```env
 AXELOR_BASE_URL=https://votre-instance.axelor.com
@@ -41,27 +33,51 @@ AXELOR_USERNAME=votre_identifiant
 AXELOR_PASSWORD=votre_mot_de_passe
 ```
 
-Remplacer les trois valeurs par vos identifiants Axelor.
+Le serveur MCP est automatiquement configuré via `.mcp.json` — Claude Code le détecte au démarrage.
 
 ---
 
-## Connexion à Claude Desktop
+## Installation chez un client Windows
 
-### 1. Ouvrir le fichier de configuration de Claude Desktop
+L'installation est manuelle et se fait en 4 étapes. Il faut intervenir directement sur le poste du client.
 
-Ce fichier se trouve ici (copier ce chemin dans l'explorateur Windows) :
+### 1. Installer Node.js
+
+Télécharger et installer **Node.js v24 LTS** → [nodejs.org](https://nodejs.org/en/download) (choisir « Windows Installer »).
+
+Vérifier l'installation dans un terminal :
+```bash
+node --version
+```
+
+### 2. Déposer le projet
+
+Copier le dossier du projet sur le poste, par exemple dans `C:\axelor-mcp`.
+
+Ouvrir un terminal dans ce dossier et installer les dépendances :
+```bash
+npm install
+```
+
+### 3. Créer le fichier de configuration
+
+Créer un fichier `.env` à la racine du projet :
+
+```env
+AXELOR_BASE_URL=https://instance-client.axelor.com
+AXELOR_USERNAME=identifiant_client
+AXELOR_PASSWORD=mot_de_passe_client
+```
+
+### 4. Connecter à Claude Desktop
+
+Ouvrir ce fichier (le créer s'il n'existe pas) :
 
 ```
-C:\Users\<VotreNom>\AppData\Roaming\Claude\claude_desktop_config.json
+C:\Users\<NomUtilisateur>\AppData\Roaming\Claude\claude_desktop_config.json
 ```
 
-> Remplacer `<VotreNom>` par votre nom d'utilisateur Windows.
-
-Si le fichier n'existe pas, le créer avec le contenu ci-dessous.
-
-### 2. Ajouter la configuration du serveur MCP
-
-Coller ce bloc dans le fichier, en remplaçant `C:/axelor-mcp` par le chemin réel du dossier :
+Y ajouter le bloc suivant en remplaçant `C:/axelor-mcp` par le chemin réel :
 
 ```json
 {
@@ -79,66 +95,22 @@ Coller ce bloc dans le fichier, en remplaçant `C:/axelor-mcp` par le chemin ré
 
 > **Attention :** utiliser des `/` et non des `\` dans les chemins.
 
-### 3. Redémarrer Claude Desktop
-
-Fermer complètement Claude Desktop (clic droit sur l'icône dans la barre des tâches → Quitter), puis le rouvrir.
-
-Un icône de marteau apparaît en bas de la fenêtre de chat — le connecteur est actif.
+Fermer complètement Claude Desktop (clic droit sur l'icône dans la barre des tâches → Quitter), puis le rouvrir. Une icône de marteau apparaît en bas de la fenêtre — le connecteur est actif.
 
 ---
 
 ## Outils disponibles
 
-Une fois connecté, Claude peut utiliser les commandes suivantes sur simple demande en langage naturel.
+Une fois connecté, Claude comprend les demandes en langage naturel. Exemples de ce qu'il peut faire :
 
-### Partenaires
+**Partenaires**
+- `search_partners` — *"Recherche le client Dupont dans Axelor"*
+- `get_partner` — *"Donne-moi les détails du partenaire ID 42"*
 
-#### `search_partners` — Rechercher un partenaire
-Recherche des clients, fournisseurs, prospects ou contacts par nom.
+**Produits**
+- `search_products` — *"Trouve le produit Prestation de conseil dans le catalogue"*
 
-| Paramètre | Description |
-|-----------|-------------|
-| `query` | Nom ou référence du partenaire |
-| `type` | Optionnel : `customer`, `supplier`, `prospect`, `contact` (défaut : tous) |
-
-> Exemple : *"Recherche le client Alternatives dans Axelor"*
-
----
-
-#### `get_partner` — Détails d'un partenaire
-Retourne toutes les informations d'un partenaire à partir de son ID.
-
-| Paramètre | Description |
-|-----------|-------------|
-| `id` | ID du partenaire (visible dans les résultats de `search_partners`) |
-
-> Exemple : *"Donne-moi les détails du partenaire ID 42"*
-
----
-
-### Commandes clients
-
-#### `search_sale_orders` — Rechercher des commandes clients
-Recherche des commandes avec filtres possibles sur le client, le numéro, le statut, la facturation et la livraison.
-
-| Paramètre | Description |
-|-----------|-------------|
-| `clientName` | Nom (partiel) du client |
-| `orderSeq` | Numéro de commande (ex : `SO-00042`) |
-| `externalReference` | Référence bon de commande client |
-| `statusSelect` | Statut : `draft`, `finalized`, `confirmed`, `completed`, `cancelled` |
-| `invoicingState` | Facturation : `not_invoiced`, `partially_invoiced`, `invoiced` |
-| `deliveryState` | Livraison : `not_delivered`, `partially_delivered`, `delivered` |
-
-> Exemple : *"Montre-moi les commandes confirmées non encore facturées"*
-
----
-
-#### `get_sale_order` — Détails d'une commande client
-Retourne toutes les informations d'une commande à partir de son ID.
-
-| Paramètre | Description |
-|-----------|-------------|
-| `id` | ID de la commande (visible dans les résultats de `search_sale_orders`) |
-
-> Exemple : *"Donne-moi les détails de la commande ID 123"*
+**Commandes clients**
+- `search_sale_orders` — *"Montre-moi les commandes confirmées non facturées du client Dupont"*
+- `get_sale_order` — *"Détails de la commande ID 123"*
+- `create_sale_order` — *"Crée un devis pour le client Dupont avec 2 jours de prestation"*

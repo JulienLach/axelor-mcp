@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { CLASSES, PARTNER_FIELDS, SALE_ORDER_FIELDS } from "./fields.ts";
+import { CLASSES, PARTNER_FIELDS, PRODUCT_FIELDS, SALE_ORDER_FIELDS } from "./fields.ts";
 
 const BASE_URL = process.env.AXELOR_BASE_URL;
 let sessionCookie = "";
@@ -123,6 +123,38 @@ server.registerTool(
     },
 );
 
+// ── Produits ──────────────────────────────────────────────────────────────────
+
+server.registerTool(
+    "search_products",
+    {
+        description: "Rechercher des produits dans Axelor par nom ou code",
+        inputSchema: {
+            query: z.string().describe("Nom ou code du produit"),
+            productType: z
+                .enum(["all", "storable", "consumable", "service"])
+                .optional()
+                .describe("Type de produit : storable, consumable, service (défaut : all)"),
+        },
+    },
+    async ({ query, productType = "all" }) => {
+        const criteria: Criterion[] = [
+            {
+                operator: "or",
+                criteria: [
+                    { fieldName: "name", operator: "like", value: `%${query}%` },
+                    { fieldName: "code", operator: "like", value: `%${query}%` },
+                ],
+            },
+        ];
+        if (productType === "storable") criteria.push({ fieldName: "productTypeSelect", operator: "=", value: "storable" });
+        if (productType === "consumable") criteria.push({ fieldName: "productTypeSelect", operator: "=", value: "consumable" });
+        if (productType === "service") criteria.push({ fieldName: "productTypeSelect", operator: "=", value: "service" });
+        const { data, total } = await axelorSearch(CLASSES.product, PRODUCT_FIELDS, criteria);
+        return text(formatResult("produit", data, total));
+    },
+);
+
 // ── Commandes clients (SaleOrder) ─────────────────────────────────────────────
 
 /*
@@ -212,6 +244,71 @@ server.registerTool(
     async ({ id }) => {
         const order = await axelorGetById(CLASSES.saleOrder, id);
         return text(order ? JSON.stringify(order, null, 2) : `Commande ID ${id} introuvable.`);
+    },
+);
+
+server.registerTool(
+    "create_sale_order",
+    {
+        description:
+            "Créer un devis (commande client) dans Axelor. Retourne le devis créé avec son numéro.",
+        inputSchema: {
+            clientPartnerId: z
+                .number()
+                .describe("ID du client (champ 'id' retourné par search_partners)"),
+            externalReference: z
+                .string()
+                .optional()
+                .describe("Référence client / objet du devis (ex: bon de commande, intitulé projet)"),
+            contactId: z
+                .number()
+                .optional()
+                .describe("ID du contact chez le client"),
+            deliveredPartnerId: z
+                .number()
+                .optional()
+                .describe("ID du partenaire livré si différent du client"),
+            companyId: z
+                .number()
+                .optional()
+                .describe("ID de la société émettrice (défaut : société principale)"),
+            currencyId: z
+                .number()
+                .optional()
+                .describe("ID de la devise (défaut : EUR)"),
+            inAti: z
+                .boolean()
+                .optional()
+                .describe("Prix TTC si true, HT si false (défaut : false)"),
+            saleOrderLineList: z
+                .array(
+                    z.object({
+                        productId: z.number().describe("ID du produit"),
+                        quantity: z.number().describe("Quantité"),
+                    }),
+                )
+                .optional()
+                .describe("Lignes de devis à ajouter"),
+        },
+    },
+    async ({ clientPartnerId, externalReference, contactId, deliveredPartnerId, companyId, currencyId, inAti, saleOrderLineList }) => {
+        const body: Record<string, unknown> = { clientPartnerId };
+        if (externalReference !== undefined) body.externalReference = externalReference;
+        if (contactId !== undefined) body.contactId = contactId;
+        if (deliveredPartnerId !== undefined) body.deliveredPartnerId = deliveredPartnerId;
+        if (companyId !== undefined) body.companyId = companyId;
+        if (currencyId !== undefined) body.currencyId = currencyId;
+        if (inAti !== undefined) body.inAti = inAti;
+        if (saleOrderLineList !== undefined) body.saleOrderLineList = saleOrderLineList;
+
+        const res = await axelorFetch("/aos/sale-order", {
+            method: "POST",
+            body: JSON.stringify(body),
+        });
+
+        if (!res.ok) throw new Error(`Échec création devis: ${res.status} — ${await res.text()}`);
+        const json = await res.json();
+        return text(JSON.stringify(json, null, 2));
     },
 );
 

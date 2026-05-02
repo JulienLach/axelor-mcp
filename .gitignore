@@ -43,6 +43,7 @@ coverage/
 # Claude files
 .claude/settings.local.json
 CLAUDE.local.md
+.mcp.json
 
 # Documents
  docs
