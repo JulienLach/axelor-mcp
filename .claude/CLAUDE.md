@@ -2,7 +2,7 @@
 
 Serveur MCP qui expose des tools Claude Desktop pour interroger l'API REST Axelor Open Suite.
 
-Node 24 + TypeScript, lancé directement avec `node index.ts` (pas de compilation).
+Node 24 + TypeScript, compilé avec `npm run build` (TSC → `dist/index.js`). Le MCP pointe sur `dist/index.js` via `.mcp.json` — toujours rebuilder après modification de `index.ts` ou `fields.ts`.
 
 ## Structure
 

@@ -4,6 +4,8 @@ export const CLASSES = {
     partner: "com.axelor.apps.base.db.Partner",
     saleOrder: "com.axelor.apps.sale.db.SaleOrder",
     product: "com.axelor.apps.base.db.Product",
+    opportunity: "com.axelor.apps.crm.db.Opportunity",
+    lead: "com.axelor.apps.crm.db.Lead",
 } as const;
 
 // ── Champs par modèle ─────────────────────────────────────────────────────────
@@ -77,6 +79,107 @@ export const PRODUCT_FIELDS = [
     "endDate",
     "createdOn",
     "updatedOn",
+];
+
+export const LEAD_FIELDS = [
+    // Identification
+    "id",
+    "fullName",
+    "firstName",
+    "name",
+    "simpleFullName",
+    // Entreprise
+    "enterpriseName",
+    "department",
+    "jobTitleFunction",
+    // Contact
+    "fixedPhone",
+    "mobilePhone",
+    "emailAddress",
+    "webSite",
+    // Statut / qualification
+    "leadStatus",
+    "leadScoringSelect",
+    "source",
+    "type",
+    "isKeyAccount",
+    "isNurturing",
+    "isConverted",
+    "lostReason",
+    "lostReasonStr",
+    // Localisation
+    "primaryAddress",
+    "primaryCity",
+    "primaryPostalCode",
+    "primaryState",
+    "primaryCountry",
+    // Responsable / équipe
+    "user",
+    "team",
+    "company",
+    // Divers
+    "industrySector",
+    "sizeSelect",
+    "numberOfEmployees",
+    "description",
+    "contactDate",
+    "archived",
+    "createdOn",
+    "updatedOn",
+];
+
+export const OPPORTUNITY_FIELDS = [
+    // Identification
+    "id",
+    "opportunitySeq",
+    "name",
+    // Partenaires
+    "partner",
+    "contact",
+    "user",
+    "team",
+    "company",
+    // Statut / étape
+    "opportunityStatus",
+    "opportunityType",
+    "opportunityRating",
+    "source",
+    "lostReason",
+    "lostReasonStr",
+    // Montants
+    "amount",
+    "probability",
+    "worstCase",
+    "bestCase",
+    "recurrentAmount",
+    "currency",
+    // Dates
+    "expectedCloseDate",
+    "recurringStartDate",
+    "recurringEndDate",
+    "expectedDurationOfRecurringRevenue",
+    // Descriptions
+    "description",
+    "customerDescription",
+    // Divers
+    "archived",
+    "createdOn",
+    "updatedOn",
+];
+
+export const SALE_ANALYSIS_FIELDS = [
+    "id",
+    "orderDate",
+    "statusSelect",
+    "invoicingState",
+    "exTaxTotal",
+    "amountInvoiced",
+    "totalCostPrice",
+    "totalGrossMargin",
+    "marginRate",
+    "clientPartner",
+    "salespersonUser",
+    "currency",
 ];
 
 export const SALE_ORDER_FIELDS = [

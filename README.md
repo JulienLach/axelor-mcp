@@ -111,6 +111,19 @@ Une fois connecté, Claude comprend les demandes en langage naturel. Exemples de
 - `search_products` — *"Trouve le produit Prestation de conseil dans le catalogue"*
 
 **Commandes clients**
-- `search_sale_orders` — *"Montre-moi les commandes confirmées non facturées du client Dupont"*
+- `search_sale_orders` — *"Montre-moi les commandes confirmées non facturées du client Dupont confirmées depuis le 2025-01-01"* (filtres : client, statut, facturation, livraison, période de confirmation, pagination)
 - `get_sale_order` — *"Détails de la commande ID 123"*
 - `create_sale_order` — *"Crée un devis pour le client Dupont avec 2 jours de prestation"*
+
+**Analyse des ventes**
+- `analyze_sales` — *"Tendance mensuelle de mon CA sur les 3 derniers mois"*, *"Top clients par CA sur 2025"*, *"Performance par commercial ce trimestre"* (groupBy : month / client / salesperson / status ; filtres : période, statut, client, commercial)
+
+**Opportunités CRM**
+- `search_opportunities` — *"Liste mes opportunités ouvertes pour le client Dupont"*
+- `get_opportunity` — *"Détails de l'opportunité ID 56"*
+- `create_opportunity` — *"Crée une opportunité de 15 000 € pour le prospect Martin avec 60 % de probabilité"*
+
+**Pistes CRM**
+- `search_leads` — *"Montre-moi les pistes chaudes non converties assignées à Julie"*
+- `get_lead` — *"Détails de la piste ID 78"*
+- `create_lead` — *"Crée une piste pour Jean Dupont de la société ABC, email jean@abc.fr"*

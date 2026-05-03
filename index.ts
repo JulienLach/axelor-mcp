@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { CLASSES, PARTNER_FIELDS, PRODUCT_FIELDS, SALE_ORDER_FIELDS } from "./fields.ts";
+import { CLASSES, LEAD_FIELDS, OPPORTUNITY_FIELDS, PARTNER_FIELDS, PRODUCT_FIELDS, SALE_ANALYSIS_FIELDS, SALE_ORDER_FIELDS } from "./fields.ts";
 
 const BASE_URL = process.env.AXELOR_BASE_URL;
 let sessionCookie = "";
@@ -46,12 +46,12 @@ async function axelorSearch(
     className: string,
     fields: string[],
     criteria: Criterion[],
-    options: { limit?: number; sortBy?: string[] } = {},
+    options: { limit?: number; offset?: number; sortBy?: string[] } = {},
 ): Promise<{ data: unknown[]; total: number }> {
     const res = await axelorFetch(`/ws/rest/${className}/search`, {
         method: "POST",
         body: JSON.stringify({
-            offset: 0,
+            offset: options.offset ?? 0,
             limit: options.limit ?? 20,
             fields,
             sortBy: options.sortBy,
@@ -155,6 +155,172 @@ server.registerTool(
     },
 );
 
+// ── Analyse des ventes ───────────────────────────────────────────────────────
+
+type SaleOrderAnalysis = {
+    id: number;
+    orderDate: string | null;
+    statusSelect: number;
+    invoicingState: number;
+    exTaxTotal: number | string;
+    amountInvoiced: number | string;
+    totalCostPrice: number | string;
+    totalGrossMargin: number | string;
+    marginRate: number | string;
+    clientPartner: { id: number; name: string } | null;
+    salespersonUser: { id: number; name: string } | null;
+    currency: { id: number; name: string } | null;
+};
+
+type SaleGroup = {
+    key: string;
+    count: number;
+    totalExTax: number;
+    totalInvoiced: number;
+    totalCost: number;
+    totalMargin: number;
+    avgMarginRate: number;
+    invoicingRate: number;
+};
+
+function groupOrders(orders: SaleOrderAnalysis[], groupBy: "month" | "client" | "salesperson" | "status"): SaleGroup[] {
+    const statusLabels: Record<number, string> = { 1: "Brouillon", 2: "Devis finalisé", 3: "Confirmée", 4: "Terminée", 5: "Annulée" };
+    const map = new Map<string, SaleGroup & { _marginRateSum: number }>();
+
+    for (const o of orders) {
+        let key: string;
+        if (groupBy === "month") key = o.orderDate ? o.orderDate.slice(0, 7) : "inconnu";
+        else if (groupBy === "client") key = o.clientPartner?.name ?? "inconnu";
+        else if (groupBy === "salesperson") key = o.salespersonUser?.name ?? "non assigné";
+        else key = statusLabels[o.statusSelect] ?? String(o.statusSelect);
+
+        const g = map.get(key) ?? { key, count: 0, totalExTax: 0, totalInvoiced: 0, totalCost: 0, totalMargin: 0, avgMarginRate: 0, invoicingRate: 0, _marginRateSum: 0 };
+        g.count++;
+        g.totalExTax    += Number(o.exTaxTotal)       || 0;
+        g.totalInvoiced += Number(o.amountInvoiced)   || 0;
+        g.totalCost     += Number(o.totalCostPrice)   || 0;
+        g.totalMargin   += Number(o.totalGrossMargin) || 0;
+        g._marginRateSum += Number(o.marginRate)      || 0;
+        map.set(key, g);
+    }
+
+    const groups: SaleGroup[] = Array.from(map.values()).map(({ _marginRateSum, ...g }) => ({
+        ...g,
+        avgMarginRate: g.count > 0 ? Math.round(_marginRateSum / g.count * 10) / 10 : 0,
+        invoicingRate: g.totalExTax > 0 ? Math.round(g.totalInvoiced / g.totalExTax * 1000) / 10 : 0,
+    }));
+
+    return groupBy === "month"
+        ? groups.sort((a, b) => a.key.localeCompare(b.key))
+        : groups.sort((a, b) => b.totalExTax - a.totalExTax);
+}
+
+function fmt(n: number): string {
+    return n.toLocaleString("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " €";
+}
+
+function formatAnalysisResult(params: {
+    groups: SaleGroup[];
+    allGroups: SaleGroup[];
+    total: number;
+    fetched: number;
+    groupBy: string;
+    dateFrom?: string;
+    dateTo?: string;
+    statusLabels: string[];
+    topN: number;
+}): string {
+    const { groups, allGroups, total, fetched, groupBy, dateFrom, dateTo, statusLabels, topN } = params;
+
+    const periode = dateFrom || dateTo ? `${dateFrom ?? "…"} → ${dateTo ?? "…"}` : "toutes périodes";
+    const lines: string[] = [
+        `Analyse des ventes — groupBy: ${groupBy} | Période: ${periode}`,
+        `Statuts: ${statusLabels.join(", ")} | ${fetched} commandes analysées sur ${total}`,
+        "",
+        `Rang | ${"Groupe".padEnd(30)} | Cmdes | ${"CA HT".padStart(14)} | ${"Facturé".padStart(14)} | Taux fact. | ${"Marge brute".padStart(14)} | Tx marge`,
+        `-----|${"-".repeat(32)}|-------|${"-".repeat(16)}|${"-".repeat(16)}|------------|${"-".repeat(16)}|----------`,
+    ];
+
+    groups.slice(0, topN).forEach((g, i) => {
+        lines.push(
+            `${String(i + 1).padStart(4)} | ${g.key.padEnd(30)} | ${String(g.count).padStart(5)} | ${fmt(g.totalExTax).padStart(14)} | ${fmt(g.totalInvoiced).padStart(14)} | ${String(g.invoicingRate.toFixed(1) + " %").padStart(10)} | ${fmt(g.totalMargin).padStart(14)} | ${String(g.avgMarginRate.toFixed(1) + " %").padStart(8)}`
+        );
+    });
+
+    // Ligne TOTAL sur l'ensemble des groupes (pas seulement topN)
+    const tot = allGroups.reduce((acc, g) => ({
+        count: acc.count + g.count,
+        totalExTax: acc.totalExTax + g.totalExTax,
+        totalInvoiced: acc.totalInvoiced + g.totalInvoiced,
+        totalMargin: acc.totalMargin + g.totalMargin,
+    }), { count: 0, totalExTax: 0, totalInvoiced: 0, totalMargin: 0 });
+    const totInvoicingRate = tot.totalExTax > 0 ? (tot.totalInvoiced / tot.totalExTax * 100).toFixed(1) + " %" : "—";
+
+    lines.push(`-----|${"-".repeat(32)}|-------|${"-".repeat(16)}|${"-".repeat(16)}|------------|${"-".repeat(16)}|----------`);
+    lines.push(`TOTAL| ${"—".padEnd(30)} | ${String(tot.count).padStart(5)} | ${fmt(tot.totalExTax).padStart(14)} | ${fmt(tot.totalInvoiced).padStart(14)} | ${totInvoicingRate.padStart(10)} | ${fmt(tot.totalMargin).padStart(14)} |`);
+
+    if (fetched < total) {
+        lines.push("", `⚠ Seules ${fetched} commandes sur ${total} ont été analysées (limite 2000) — affiner la période ou les filtres.`);
+    }
+
+    return lines.join("\n");
+}
+
+server.registerTool(
+    "analyze_sales",
+    {
+        description:
+            "Analyse agrégée des commandes clients : CA par mois/client/commercial, marges, taux de facturation. Utiliser dateFrom/dateTo pour la période et groupBy pour l'axe d'analyse.",
+        inputSchema: {
+            groupBy: z
+                .enum(["month", "client", "salesperson", "status"])
+                .describe("Axe d'analyse : month (tendance mensuelle), client (top clients), salesperson (performance commerciaux), status (répartition par statut)"),
+            dateFrom: z.string().optional().describe("Date de début (YYYY-MM-DD) — filtre sur orderDate"),
+            dateTo: z.string().optional().describe("Date de fin (YYYY-MM-DD) — filtre sur orderDate"),
+            statusSelect: z
+                .array(z.enum(["draft", "finalized", "confirmed", "completed", "cancelled"]))
+                .optional()
+                .describe("Statuts à inclure (défaut : draft, finalized, confirmed, completed — hors annulées)"),
+            clientName: z.string().optional().describe("Filtrer par client (nom partiel)"),
+            salespersonName: z.string().optional().describe("Filtrer par commercial (nom partiel)"),
+            topN: z.number().optional().describe("Nombre de groupes à afficher (défaut : 20)"),
+        },
+    },
+    async ({ groupBy, dateFrom, dateTo, statusSelect, clientName, salespersonName, topN = 20 }) => {
+        const statusMap = { draft: 1, finalized: 2, confirmed: 3, completed: 4, cancelled: 5 };
+        const activeStatuses = statusSelect?.length ? statusSelect : ["draft", "finalized", "confirmed", "completed"] as const;
+        const activeValues = activeStatuses.map(s => statusMap[s as keyof typeof statusMap]);
+
+        const criteria: Criterion[] = [
+            { operator: "or", criteria: activeValues.map(v => ({ fieldName: "statusSelect", operator: "=", value: v })) },
+        ];
+        if (dateFrom) criteria.push({ fieldName: "orderDate", operator: ">=", value: dateFrom });
+        if (dateTo)   criteria.push({ fieldName: "orderDate", operator: "<=", value: dateTo });
+        if (clientName)      criteria.push({ fieldName: "clientPartner.name", operator: "like", value: `%${clientName}%` });
+        if (salespersonName) criteria.push({ fieldName: "salespersonUser.name", operator: "like", value: `%${salespersonName}%` });
+
+        const { data, total } = await axelorSearch(CLASSES.saleOrder, SALE_ANALYSIS_FIELDS, criteria, {
+            limit: 2000,
+            sortBy: ["orderDate"],
+        });
+
+        const orders = data as SaleOrderAnalysis[];
+        const allGroups = groupOrders(orders, groupBy);
+
+        return text(formatAnalysisResult({
+            groups: allGroups,
+            allGroups,
+            total,
+            fetched: orders.length,
+            groupBy,
+            dateFrom,
+            dateTo,
+            statusLabels: activeStatuses as unknown as string[],
+            topN,
+        }));
+    },
+);
+
 // ── Commandes clients (SaleOrder) ─────────────────────────────────────────────
 
 /*
@@ -180,7 +346,7 @@ server.registerTool(
     "search_sale_orders",
     {
         description:
-            "Rechercher des commandes clients (SaleOrder) dans Axelor. Filtres possibles : client, numéro de commande, statut, état facturation, état livraison.",
+            "Rechercher des commandes clients (SaleOrder) dans Axelor. Filtres possibles : client, numéro de commande, statut, état facturation, état livraison, période de confirmation. Supporte la pagination via offset/limit.",
         inputSchema: {
             clientName: z
                 .string()
@@ -206,9 +372,25 @@ server.registerTool(
                 .enum(["not_delivered", "partially_delivered", "delivered"])
                 .optional()
                 .describe("État de livraison"),
+            dateFrom: z
+                .string()
+                .optional()
+                .describe("Date de confirmation minimale (YYYY-MM-DD) — filtre sur confirmationDateTime"),
+            dateTo: z
+                .string()
+                .optional()
+                .describe("Date de confirmation maximale (YYYY-MM-DD) — filtre sur confirmationDateTime"),
+            limit: z
+                .number()
+                .optional()
+                .describe("Nombre de résultats à retourner (défaut : 20, max recommandé : 200)"),
+            offset: z
+                .number()
+                .optional()
+                .describe("Décalage pour la pagination (défaut : 0)"),
         },
     },
-    async ({ clientName, orderSeq, externalReference, statusSelect, invoicingState, deliveryState }) => {
+    async ({ clientName, orderSeq, externalReference, statusSelect, invoicingState, deliveryState, dateFrom, dateTo, limit, offset }) => {
         const criteria: Criterion[] = [];
 
         if (clientName) criteria.push({ fieldName: "clientPartner.name", operator: "like", value: `%${clientName}%` });
@@ -224,10 +406,15 @@ server.registerTool(
         const deliveryMap = { not_delivered: 0, partially_delivered: 1, delivered: 2 };
         if (deliveryState) criteria.push({ fieldName: "deliveryState", operator: "=", value: deliveryMap[deliveryState] });
 
+        if (dateFrom) criteria.push({ fieldName: "confirmationDateTime", operator: ">=", value: `${dateFrom}T00:00:00` });
+        if (dateTo)   criteria.push({ fieldName: "confirmationDateTime", operator: "<=", value: `${dateTo}T23:59:59` });
+
         if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
 
         const { data, total } = await axelorSearch(CLASSES.saleOrder, SALE_ORDER_FIELDS, criteria, {
             sortBy: ["-orderDate"],
+            limit: limit ?? 20,
+            offset: offset ?? 0,
         });
         return text(formatResult("commande client", data, total));
     },
@@ -309,6 +496,206 @@ server.registerTool(
         if (!res.ok) throw new Error(`Échec création devis: ${res.status} — ${await res.text()}`);
         const json = await res.json();
         return text(JSON.stringify(json, null, 2));
+    },
+);
+
+// ── Pistes / Leads (CRM) ─────────────────────────────────────────────────────
+
+server.registerTool(
+    "search_leads",
+    {
+        description:
+            "Rechercher des pistes (leads) CRM dans Axelor. Filtres : nom, entreprise, responsable, statut, scoring, source. Idéal pour lister les pistes à traiter ou relancer.",
+        inputSchema: {
+            name: z.string().optional().describe("Nom ou prénom (partiel) du contact"),
+            enterpriseName: z.string().optional().describe("Nom (partiel) de l'entreprise"),
+            userName: z.string().optional().describe("Nom (partiel) du responsable assigné"),
+            leadScoringSelect: z
+                .enum(["cold", "warm", "hot"])
+                .optional()
+                .describe("Scoring : cold=1, warm=2, hot=3"),
+            isConverted: z.boolean().optional().describe("Filtrer les pistes converties (true) ou non converties (false)"),
+            isNurturing: z.boolean().optional().describe("Filtrer les pistes en nurturing"),
+            archived: z.boolean().optional().describe("Inclure les pistes archivées (défaut : false)"),
+        },
+    },
+    async ({ name, enterpriseName, userName, leadScoringSelect, isConverted, isNurturing, archived }) => {
+        const criteria: Criterion[] = [];
+
+        if (name)
+            criteria.push({
+                operator: "or",
+                criteria: [
+                    { fieldName: "name", operator: "like", value: `%${name}%` },
+                    { fieldName: "firstName", operator: "like", value: `%${name}%` },
+                ],
+            });
+        if (enterpriseName) criteria.push({ fieldName: "enterpriseName", operator: "like", value: `%${enterpriseName}%` });
+        if (userName) criteria.push({ fieldName: "user.name", operator: "like", value: `%${userName}%` });
+
+        const scoringMap = { cold: 1, warm: 2, hot: 3 };
+        if (leadScoringSelect) criteria.push({ fieldName: "leadScoringSelect", operator: "=", value: scoringMap[leadScoringSelect] });
+        if (isConverted !== undefined) criteria.push({ fieldName: "isConverted", operator: "=", value: isConverted });
+        if (isNurturing !== undefined) criteria.push({ fieldName: "isNurturing", operator: "=", value: isNurturing });
+        if (!archived) criteria.push({ fieldName: "archived", operator: "=", value: false });
+
+        if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
+
+        const { data, total } = await axelorSearch(CLASSES.lead, LEAD_FIELDS, criteria, {
+            sortBy: ["-leadScoringSelect", "-createdOn"],
+        });
+        return text(formatResult("piste", data, total));
+    },
+);
+
+server.registerTool(
+    "get_lead",
+    {
+        description: "Obtenir tous les détails d'une piste (lead) CRM Axelor par son ID",
+        inputSchema: {
+            id: z.number().describe("ID de la piste (champ 'id' retourné par search_leads)"),
+        },
+    },
+    async ({ id }) => {
+        const lead = await axelorGetById(CLASSES.lead, id);
+        return text(lead ? JSON.stringify(lead, null, 2) : `Piste ID ${id} introuvable.`);
+    },
+);
+
+server.registerTool(
+    "create_lead",
+    {
+        description: "Créer une piste (lead) CRM dans Axelor. Retourne la piste créée avec son ID.",
+        inputSchema: {
+            firstName: z.string().optional().describe("Prénom du contact"),
+            name: z.string().describe("Nom du contact"),
+            enterpriseName: z.string().optional().describe("Nom de l'entreprise"),
+            emailAddress: z.string().optional().describe("Adresse email (ex: contact@example.com)"),
+            fixedPhone: z.string().optional().describe("Téléphone fixe"),
+            mobilePhone: z.string().optional().describe("Téléphone mobile"),
+            userId: z.number().optional().describe("ID de l'utilisateur responsable"),
+            sourceId: z.number().optional().describe("ID de la source (Source)"),
+            leadScoringSelect: z
+                .enum(["cold", "warm", "hot"])
+                .optional()
+                .describe("Scoring de la piste : cold=1, warm=2, hot=3"),
+            description: z.string().optional().describe("Description / notes"),
+            webSite: z.string().optional().describe("Site web de l'entreprise"),
+            primaryAddress: z.string().optional().describe("Adresse (texte libre)"),
+        },
+    },
+    async ({ firstName, name, enterpriseName, emailAddress, fixedPhone, mobilePhone, userId, sourceId, leadScoringSelect, description, webSite, primaryAddress }) => {
+        const scoringMap = { cold: 1, warm: 2, hot: 3 };
+        const data: Record<string, unknown> = { name };
+
+        if (firstName !== undefined) data.firstName = firstName;
+        if (enterpriseName !== undefined) data.enterpriseName = enterpriseName;
+        if (emailAddress !== undefined) data.emailAddress = { address: emailAddress };
+        if (fixedPhone !== undefined) data.fixedPhone = fixedPhone;
+        if (mobilePhone !== undefined) data.mobilePhone = mobilePhone;
+        if (userId !== undefined) data.user = { id: userId };
+        if (sourceId !== undefined) data.source = { id: sourceId };
+        if (leadScoringSelect !== undefined) data.leadScoringSelect = scoringMap[leadScoringSelect];
+        if (description !== undefined) data.description = description;
+        if (webSite !== undefined) data.webSite = webSite;
+        if (primaryAddress !== undefined) data.primaryAddress = primaryAddress;
+
+        const result = await axelorCreate(CLASSES.lead, data);
+        return text(result ? JSON.stringify(result, null, 2) : "Échec de la création de la piste.");
+    },
+);
+
+// ── Opportunités (CRM) ────────────────────────────────────────────────────────
+
+async function axelorCreate(className: string, data: Record<string, unknown>): Promise<unknown> {
+    const res = await axelorFetch(`/ws/rest/${className}`, {
+        method: "PUT",
+        body: JSON.stringify({ data }),
+    });
+    if (!res.ok) throw new Error(`Axelor create failed (${className}): ${res.status} — ${await res.text()}`);
+    const json = (await res.json()) as { data?: unknown[] };
+    return json.data?.[0] ?? null;
+}
+
+server.registerTool(
+    "search_opportunities",
+    {
+        description: "Rechercher des opportunités CRM dans Axelor. Filtres : nom, client, responsable, statut de l'étape de vente.",
+        inputSchema: {
+            name: z.string().optional().describe("Nom (partiel) de l'opportunité"),
+            partnerName: z.string().optional().describe("Nom (partiel) du client / prospect"),
+            userName: z.string().optional().describe("Nom (partiel) du responsable assigné"),
+            archived: z.boolean().optional().describe("Inclure les opportunités archivées (défaut : false)"),
+        },
+    },
+    async ({ name, partnerName, userName, archived }) => {
+        const criteria: Criterion[] = [];
+        if (name) criteria.push({ fieldName: "name", operator: "like", value: `%${name}%` });
+        if (partnerName) criteria.push({ fieldName: "partner.name", operator: "like", value: `%${partnerName}%` });
+        if (userName) criteria.push({ fieldName: "user.name", operator: "like", value: `%${userName}%` });
+        if (!archived) criteria.push({ fieldName: "archived", operator: "=", value: false });
+        if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
+
+        const { data, total } = await axelorSearch(CLASSES.opportunity, OPPORTUNITY_FIELDS, criteria, {
+            sortBy: ["-expectedCloseDate"],
+        });
+        return text(formatResult("opportunité", data, total));
+    },
+);
+
+server.registerTool(
+    "get_opportunity",
+    {
+        description: "Obtenir tous les détails d'une opportunité CRM Axelor par son ID",
+        inputSchema: {
+            id: z.number().describe("ID de l'opportunité (champ 'id' retourné par search_opportunities)"),
+        },
+    },
+    async ({ id }) => {
+        const opp = await axelorGetById(CLASSES.opportunity, id);
+        return text(opp ? JSON.stringify(opp, null, 2) : `Opportunité ID ${id} introuvable.`);
+    },
+);
+
+server.registerTool(
+    "create_opportunity",
+    {
+        description: "Créer une opportunité CRM dans Axelor. Retourne l'opportunité créée avec sa référence.",
+        inputSchema: {
+            name: z.string().describe("Nom / intitulé de l'opportunité"),
+            partnerId: z.number().describe("ID du client ou prospect (champ 'id' retourné par search_partners)"),
+            contactId: z.number().optional().describe("ID du contact chez le client"),
+            userId: z.number().optional().describe("ID de l'utilisateur responsable"),
+            amount: z.number().optional().describe("Montant estimé (HT)"),
+            probability: z.number().optional().describe("Probabilité de closing en % (0-100)"),
+            expectedCloseDate: z.string().optional().describe("Date de clôture prévue (format YYYY-MM-DD)"),
+            opportunityStatusId: z.number().optional().describe("ID de l'étape de vente (OpportunityStatus)"),
+            opportunityTypeId: z.number().optional().describe("ID du type de besoin (OpportunityType)"),
+            sourceId: z.number().optional().describe("ID de la source (Source)"),
+            currencyId: z.number().optional().describe("ID de la devise"),
+            description: z.string().optional().describe("Description interne"),
+            customerDescription: z.string().optional().describe("Description client"),
+        },
+    },
+    async ({ name, partnerId, contactId, userId, amount, probability, expectedCloseDate, opportunityStatusId, opportunityTypeId, sourceId, currencyId, description, customerDescription }) => {
+        const data: Record<string, unknown> = {
+            name,
+            partner: { id: partnerId },
+        };
+        if (contactId !== undefined) data.contact = { id: contactId };
+        if (userId !== undefined) data.user = { id: userId };
+        if (amount !== undefined) data.amount = amount;
+        if (probability !== undefined) data.probability = probability;
+        if (expectedCloseDate !== undefined) data.expectedCloseDate = expectedCloseDate;
+        if (opportunityStatusId !== undefined) data.opportunityStatus = { id: opportunityStatusId };
+        if (opportunityTypeId !== undefined) data.opportunityType = { id: opportunityTypeId };
+        if (sourceId !== undefined) data.source = { id: sourceId };
+        if (currencyId !== undefined) data.currency = { id: currencyId };
+        if (description !== undefined) data.description = description;
+        if (customerDescription !== undefined) data.customerDescription = customerDescription;
+
+        const result = await axelorCreate(CLASSES.opportunity, data);
+        return text(result ? JSON.stringify(result, null, 2) : "Échec de la création de l'opportunité.");
     },
 );
 
