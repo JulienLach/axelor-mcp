@@ -6,8 +6,8 @@
         "strict": true,
         "esModuleInterop": true,
         "skipLibCheck": true,
-        "allowImportingTsExtensions": true,
-        "noEmit": true,
+        "rewriteRelativeImportExtensions": true,
+        "outDir": "./dist",
         "types": ["node"]
     },
     "include": ["*.ts"],
