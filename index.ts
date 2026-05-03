@@ -1,7 +1,17 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { CLASSES, INVOICE_FIELDS, LEAD_FIELDS, OPPORTUNITY_FIELDS, PARTNER_FIELDS, PRODUCT_FIELDS, SALE_ANALYSIS_FIELDS, SALE_ORDER_FIELDS, SALE_ORDER_LINE_FIELDS } from "./fields.ts";
+import {
+    CLASSES,
+    INVOICE_FIELDS,
+    LEAD_FIELDS,
+    OPPORTUNITY_FIELDS,
+    PARTNER_FIELDS,
+    PRODUCT_FIELDS,
+    SALE_ANALYSIS_FIELDS,
+    SALE_ORDER_FIELDS,
+    SALE_ORDER_LINE_FIELDS,
+} from "./fields.ts";
 
 const BASE_URL = process.env.AXELOR_BASE_URL;
 let sessionCookie = "";
@@ -40,7 +50,9 @@ async function axelorFetch(path: string, options: RequestInit): Promise<Response
 
 // ── Helpers génériques ────────────────────────────────────────────────────────
 
-type Criterion = { fieldName: string; operator: string; value: unknown } | { operator: "and" | "or"; criteria: Criterion[] };
+type Criterion =
+    | { fieldName: string; operator: string; value: unknown }
+    | { operator: "and" | "or"; criteria: Criterion[] };
 
 async function axelorSearch(
     className: string,
@@ -89,7 +101,8 @@ const server = new McpServer({ name: "axelor-mcp", version: "1.1.0" });
 server.registerTool(
     "search_partners",
     {
-        description: "Rechercher des partenaires (clients, fournisseurs, prospects, contacts) dans Axelor par nom ou référence",
+        description:
+            "Rechercher des partenaires (clients, fournisseurs, prospects, contacts) dans Axelor par nom ou référence",
         inputSchema: {
             query: z.string().describe("Nom ou référence du partenaire"),
             type: z
@@ -147,9 +160,12 @@ server.registerTool(
                 ],
             },
         ];
-        if (productType === "storable") criteria.push({ fieldName: "productTypeSelect", operator: "=", value: "storable" });
-        if (productType === "consumable") criteria.push({ fieldName: "productTypeSelect", operator: "=", value: "consumable" });
-        if (productType === "service") criteria.push({ fieldName: "productTypeSelect", operator: "=", value: "service" });
+        if (productType === "storable")
+            criteria.push({ fieldName: "productTypeSelect", operator: "=", value: "storable" });
+        if (productType === "consumable")
+            criteria.push({ fieldName: "productTypeSelect", operator: "=", value: "consumable" });
+        if (productType === "service")
+            criteria.push({ fieldName: "productTypeSelect", operator: "=", value: "service" });
         const { data, total } = await axelorSearch(CLASSES.product, PRODUCT_FIELDS, criteria);
         return text(formatResult("produit", data, total));
     },
@@ -184,7 +200,13 @@ type SaleGroup = {
 };
 
 function groupOrders(orders: SaleOrderAnalysis[], groupBy: "month" | "client" | "salesperson" | "status"): SaleGroup[] {
-    const statusLabels: Record<number, string> = { 1: "Brouillon", 2: "Devis finalisé", 3: "Confirmée", 4: "Terminée", 5: "Annulée" };
+    const statusLabels: Record<number, string> = {
+        1: "Brouillon",
+        2: "Devis finalisé",
+        3: "Confirmée",
+        4: "Terminée",
+        5: "Annulée",
+    };
     const map = new Map<string, SaleGroup & { _marginRateSum: number }>();
 
     for (const o of orders) {
@@ -194,20 +216,30 @@ function groupOrders(orders: SaleOrderAnalysis[], groupBy: "month" | "client" | 
         else if (groupBy === "salesperson") key = o.salespersonUser?.name ?? "non assigné";
         else key = statusLabels[o.statusSelect] ?? String(o.statusSelect);
 
-        const g = map.get(key) ?? { key, count: 0, totalExTax: 0, totalInvoiced: 0, totalCost: 0, totalMargin: 0, avgMarginRate: 0, invoicingRate: 0, _marginRateSum: 0 };
+        const g = map.get(key) ?? {
+            key,
+            count: 0,
+            totalExTax: 0,
+            totalInvoiced: 0,
+            totalCost: 0,
+            totalMargin: 0,
+            avgMarginRate: 0,
+            invoicingRate: 0,
+            _marginRateSum: 0,
+        };
         g.count++;
-        g.totalExTax    += Number(o.exTaxTotal)       || 0;
-        g.totalInvoiced += Number(o.amountInvoiced)   || 0;
-        g.totalCost     += Number(o.totalCostPrice)   || 0;
-        g.totalMargin   += Number(o.totalGrossMargin) || 0;
-        g._marginRateSum += Number(o.marginRate)      || 0;
+        g.totalExTax += Number(o.exTaxTotal) || 0;
+        g.totalInvoiced += Number(o.amountInvoiced) || 0;
+        g.totalCost += Number(o.totalCostPrice) || 0;
+        g.totalMargin += Number(o.totalGrossMargin) || 0;
+        g._marginRateSum += Number(o.marginRate) || 0;
         map.set(key, g);
     }
 
     const groups: SaleGroup[] = Array.from(map.values()).map(({ _marginRateSum, ...g }) => ({
         ...g,
-        avgMarginRate: g.count > 0 ? Math.round(_marginRateSum / g.count * 10) / 10 : 0,
-        invoicingRate: g.totalExTax > 0 ? Math.round(g.totalInvoiced / g.totalExTax * 1000) / 10 : 0,
+        avgMarginRate: g.count > 0 ? Math.round((_marginRateSum / g.count) * 10) / 10 : 0,
+        invoicingRate: g.totalExTax > 0 ? Math.round((g.totalInvoiced / g.totalExTax) * 1000) / 10 : 0,
     }));
 
     return groupBy === "month"
@@ -243,24 +275,34 @@ function formatAnalysisResult(params: {
 
     groups.slice(0, topN).forEach((g, i) => {
         lines.push(
-            `${String(i + 1).padStart(4)} | ${g.key.padEnd(30)} | ${String(g.count).padStart(5)} | ${fmt(g.totalExTax).padStart(14)} | ${fmt(g.totalInvoiced).padStart(14)} | ${String(g.invoicingRate.toFixed(1) + " %").padStart(10)} | ${fmt(g.totalMargin).padStart(14)} | ${String(g.avgMarginRate.toFixed(1) + " %").padStart(8)}`
+            `${String(i + 1).padStart(4)} | ${g.key.padEnd(30)} | ${String(g.count).padStart(5)} | ${fmt(g.totalExTax).padStart(14)} | ${fmt(g.totalInvoiced).padStart(14)} | ${String(g.invoicingRate.toFixed(1) + " %").padStart(10)} | ${fmt(g.totalMargin).padStart(14)} | ${String(g.avgMarginRate.toFixed(1) + " %").padStart(8)}`,
         );
     });
 
     // Ligne TOTAL sur l'ensemble des groupes (pas seulement topN)
-    const tot = allGroups.reduce((acc, g) => ({
-        count: acc.count + g.count,
-        totalExTax: acc.totalExTax + g.totalExTax,
-        totalInvoiced: acc.totalInvoiced + g.totalInvoiced,
-        totalMargin: acc.totalMargin + g.totalMargin,
-    }), { count: 0, totalExTax: 0, totalInvoiced: 0, totalMargin: 0 });
-    const totInvoicingRate = tot.totalExTax > 0 ? (tot.totalInvoiced / tot.totalExTax * 100).toFixed(1) + " %" : "—";
+    const tot = allGroups.reduce(
+        (acc, g) => ({
+            count: acc.count + g.count,
+            totalExTax: acc.totalExTax + g.totalExTax,
+            totalInvoiced: acc.totalInvoiced + g.totalInvoiced,
+            totalMargin: acc.totalMargin + g.totalMargin,
+        }),
+        { count: 0, totalExTax: 0, totalInvoiced: 0, totalMargin: 0 },
+    );
+    const totInvoicingRate = tot.totalExTax > 0 ? ((tot.totalInvoiced / tot.totalExTax) * 100).toFixed(1) + " %" : "—";
 
-    lines.push(`-----|${"-".repeat(32)}|-------|${"-".repeat(16)}|${"-".repeat(16)}|------------|${"-".repeat(16)}|----------`);
-    lines.push(`TOTAL| ${"—".padEnd(30)} | ${String(tot.count).padStart(5)} | ${fmt(tot.totalExTax).padStart(14)} | ${fmt(tot.totalInvoiced).padStart(14)} | ${totInvoicingRate.padStart(10)} | ${fmt(tot.totalMargin).padStart(14)} |`);
+    lines.push(
+        `-----|${"-".repeat(32)}|-------|${"-".repeat(16)}|${"-".repeat(16)}|------------|${"-".repeat(16)}|----------`,
+    );
+    lines.push(
+        `TOTAL| ${"—".padEnd(30)} | ${String(tot.count).padStart(5)} | ${fmt(tot.totalExTax).padStart(14)} | ${fmt(tot.totalInvoiced).padStart(14)} | ${totInvoicingRate.padStart(10)} | ${fmt(tot.totalMargin).padStart(14)} |`,
+    );
 
     if (fetched < total) {
-        lines.push("", `⚠ Seules ${fetched} commandes sur ${total} ont été analysées (limite 2000) — affiner la période ou les filtres.`);
+        lines.push(
+            "",
+            `⚠ Seules ${fetched} commandes sur ${total} ont été analysées (limite 2000) — affiner la période ou les filtres.`,
+        );
     }
 
     return lines.join("\n");
@@ -274,7 +316,9 @@ server.registerTool(
         inputSchema: {
             groupBy: z
                 .enum(["month", "client", "salesperson", "status"])
-                .describe("Axe d'analyse : month (tendance mensuelle), client (top clients), salesperson (performance commerciaux), status (répartition par statut)"),
+                .describe(
+                    "Axe d'analyse : month (tendance mensuelle), client (top clients), salesperson (performance commerciaux), status (répartition par statut)",
+                ),
             dateFrom: z.string().optional().describe("Date de début (YYYY-MM-DD) — filtre sur orderDate"),
             dateTo: z.string().optional().describe("Date de fin (YYYY-MM-DD) — filtre sur orderDate"),
             statusSelect: z
@@ -288,16 +332,22 @@ server.registerTool(
     },
     async ({ groupBy, dateFrom, dateTo, statusSelect, clientName, salespersonName, topN = 20 }) => {
         const statusMap = { draft: 1, finalized: 2, confirmed: 3, completed: 4, cancelled: 5 };
-        const activeStatuses = statusSelect?.length ? statusSelect : ["draft", "finalized", "confirmed", "completed"] as const;
-        const activeValues = activeStatuses.map(s => statusMap[s as keyof typeof statusMap]);
+        const activeStatuses = statusSelect?.length
+            ? statusSelect
+            : (["draft", "finalized", "confirmed", "completed"] as const);
+        const activeValues = activeStatuses.map((s) => statusMap[s as keyof typeof statusMap]);
 
         const criteria: Criterion[] = [
-            { operator: "or", criteria: activeValues.map(v => ({ fieldName: "statusSelect", operator: "=", value: v })) },
+            {
+                operator: "or",
+                criteria: activeValues.map((v) => ({ fieldName: "statusSelect", operator: "=", value: v })),
+            },
         ];
         if (dateFrom) criteria.push({ fieldName: "orderDate", operator: ">=", value: dateFrom });
-        if (dateTo)   criteria.push({ fieldName: "orderDate", operator: "<=", value: dateTo });
-        if (clientName)      criteria.push({ fieldName: "clientPartner.name", operator: "like", value: `%${clientName}%` });
-        if (salespersonName) criteria.push({ fieldName: "salespersonUser.name", operator: "like", value: `%${salespersonName}%` });
+        if (dateTo) criteria.push({ fieldName: "orderDate", operator: "<=", value: dateTo });
+        if (clientName) criteria.push({ fieldName: "clientPartner.name", operator: "like", value: `%${clientName}%` });
+        if (salespersonName)
+            criteria.push({ fieldName: "salespersonUser.name", operator: "like", value: `%${salespersonName}%` });
 
         const { data, total } = await axelorSearch(CLASSES.saleOrder, SALE_ANALYSIS_FIELDS, criteria, {
             limit: 2000,
@@ -307,17 +357,19 @@ server.registerTool(
         const orders = data as SaleOrderAnalysis[];
         const allGroups = groupOrders(orders, groupBy);
 
-        return text(formatAnalysisResult({
-            groups: allGroups,
-            allGroups,
-            total,
-            fetched: orders.length,
-            groupBy,
-            dateFrom,
-            dateTo,
-            statusLabels: activeStatuses as unknown as string[],
-            topN,
-        }));
+        return text(
+            formatAnalysisResult({
+                groups: allGroups,
+                allGroups,
+                total,
+                fetched: orders.length,
+                groupBy,
+                dateFrom,
+                dateTo,
+                statusLabels: activeStatuses as unknown as string[],
+                topN,
+            }),
+        );
     },
 );
 
@@ -348,18 +400,9 @@ server.registerTool(
         description:
             "Rechercher des commandes clients (SaleOrder) dans Axelor. Filtres possibles : client, numéro de commande, statut, état facturation, état livraison, période de confirmation. Supporte la pagination via offset/limit.",
         inputSchema: {
-            clientName: z
-                .string()
-                .optional()
-                .describe("Nom (partiel) du client"),
-            orderSeq: z
-                .string()
-                .optional()
-                .describe("Numéro interne de la commande (ex: SO-00042)"),
-            externalReference: z
-                .string()
-                .optional()
-                .describe("Référence client (bon de commande client)"),
+            clientName: z.string().optional().describe("Nom (partiel) du client"),
+            orderSeq: z.string().optional().describe("Numéro interne de la commande (ex: SO-00042)"),
+            externalReference: z.string().optional().describe("Référence client (bon de commande client)"),
             statusSelect: z
                 .enum(["draft", "finalized", "confirmed", "completed", "cancelled"])
                 .optional()
@@ -384,30 +427,42 @@ server.registerTool(
                 .number()
                 .optional()
                 .describe("Nombre de résultats à retourner (défaut : 20, max recommandé : 200)"),
-            offset: z
-                .number()
-                .optional()
-                .describe("Décalage pour la pagination (défaut : 0)"),
+            offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
         },
     },
-    async ({ clientName, orderSeq, externalReference, statusSelect, invoicingState, deliveryState, dateFrom, dateTo, limit, offset }) => {
+    async ({
+        clientName,
+        orderSeq,
+        externalReference,
+        statusSelect,
+        invoicingState,
+        deliveryState,
+        dateFrom,
+        dateTo,
+        limit,
+        offset,
+    }) => {
         const criteria: Criterion[] = [];
 
         if (clientName) criteria.push({ fieldName: "clientPartner.name", operator: "like", value: `%${clientName}%` });
         if (orderSeq) criteria.push({ fieldName: "saleOrderSeq", operator: "like", value: `%${orderSeq}%` });
-        if (externalReference) criteria.push({ fieldName: "externalReference", operator: "like", value: `%${externalReference}%` });
+        if (externalReference)
+            criteria.push({ fieldName: "externalReference", operator: "like", value: `%${externalReference}%` });
 
         const statusMap = { draft: 1, finalized: 2, confirmed: 3, completed: 4, cancelled: 5 };
         if (statusSelect) criteria.push({ fieldName: "statusSelect", operator: "=", value: statusMap[statusSelect] });
 
         const invoicingMap = { not_invoiced: 0, partially_invoiced: 1, invoiced: 2 };
-        if (invoicingState) criteria.push({ fieldName: "invoicingState", operator: "=", value: invoicingMap[invoicingState] });
+        if (invoicingState)
+            criteria.push({ fieldName: "invoicingState", operator: "=", value: invoicingMap[invoicingState] });
 
         const deliveryMap = { not_delivered: 0, partially_delivered: 1, delivered: 2 };
-        if (deliveryState) criteria.push({ fieldName: "deliveryState", operator: "=", value: deliveryMap[deliveryState] });
+        if (deliveryState)
+            criteria.push({ fieldName: "deliveryState", operator: "=", value: deliveryMap[deliveryState] });
 
-        if (dateFrom) criteria.push({ fieldName: "confirmationDateTime", operator: ">=", value: `${dateFrom}T00:00:00` });
-        if (dateTo)   criteria.push({ fieldName: "confirmationDateTime", operator: "<=", value: `${dateTo}T23:59:59` });
+        if (dateFrom)
+            criteria.push({ fieldName: "confirmationDateTime", operator: ">=", value: `${dateFrom}T00:00:00` });
+        if (dateTo) criteria.push({ fieldName: "confirmationDateTime", operator: "<=", value: `${dateTo}T23:59:59` });
 
         if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
 
@@ -437,36 +492,18 @@ server.registerTool(
 server.registerTool(
     "create_sale_order",
     {
-        description:
-            "Créer un devis (commande client) dans Axelor. Retourne le devis créé avec son numéro.",
+        description: "Créer un devis (commande client) dans Axelor. Retourne le devis créé avec son numéro.",
         inputSchema: {
-            clientPartnerId: z
-                .number()
-                .describe("ID du client (champ 'id' retourné par search_partners)"),
+            clientPartnerId: z.number().describe("ID du client (champ 'id' retourné par search_partners)"),
             externalReference: z
                 .string()
                 .optional()
                 .describe("Référence client / objet du devis (ex: bon de commande, intitulé projet)"),
-            contactId: z
-                .number()
-                .optional()
-                .describe("ID du contact chez le client"),
-            deliveredPartnerId: z
-                .number()
-                .optional()
-                .describe("ID du partenaire livré si différent du client"),
-            companyId: z
-                .number()
-                .optional()
-                .describe("ID de la société émettrice (défaut : société principale)"),
-            currencyId: z
-                .number()
-                .optional()
-                .describe("ID de la devise (défaut : EUR)"),
-            inAti: z
-                .boolean()
-                .optional()
-                .describe("Prix TTC si true, HT si false (défaut : false)"),
+            contactId: z.number().optional().describe("ID du contact chez le client"),
+            deliveredPartnerId: z.number().optional().describe("ID du partenaire livré si différent du client"),
+            companyId: z.number().optional().describe("ID de la société émettrice (défaut : société principale)"),
+            currencyId: z.number().optional().describe("ID de la devise (défaut : EUR)"),
+            inAti: z.boolean().optional().describe("Prix TTC si true, HT si false (défaut : false)"),
             saleOrderLineList: z
                 .array(
                     z.object({
@@ -478,7 +515,16 @@ server.registerTool(
                 .describe("Lignes de devis à ajouter"),
         },
     },
-    async ({ clientPartnerId, externalReference, contactId, deliveredPartnerId, companyId, currencyId, inAti, saleOrderLineList }) => {
+    async ({
+        clientPartnerId,
+        externalReference,
+        contactId,
+        deliveredPartnerId,
+        companyId,
+        currencyId,
+        inAti,
+        saleOrderLineList,
+    }) => {
         const body: Record<string, unknown> = { clientPartnerId };
         if (externalReference !== undefined) body.externalReference = externalReference;
         if (contactId !== undefined) body.contactId = contactId;
@@ -510,11 +556,11 @@ server.registerTool(
             name: z.string().optional().describe("Nom ou prénom (partiel) du contact"),
             enterpriseName: z.string().optional().describe("Nom (partiel) de l'entreprise"),
             userName: z.string().optional().describe("Nom (partiel) du responsable assigné"),
-            leadScoringSelect: z
-                .enum(["cold", "warm", "hot"])
+            leadScoringSelect: z.enum(["cold", "warm", "hot"]).optional().describe("Scoring : cold=1, warm=2, hot=3"),
+            isConverted: z
+                .boolean()
                 .optional()
-                .describe("Scoring : cold=1, warm=2, hot=3"),
-            isConverted: z.boolean().optional().describe("Filtrer les pistes converties (true) ou non converties (false)"),
+                .describe("Filtrer les pistes converties (true) ou non converties (false)"),
             isNurturing: z.boolean().optional().describe("Filtrer les pistes en nurturing"),
             archived: z.boolean().optional().describe("Inclure les pistes archivées (défaut : false)"),
         },
@@ -530,11 +576,13 @@ server.registerTool(
                     { fieldName: "firstName", operator: "like", value: `%${name}%` },
                 ],
             });
-        if (enterpriseName) criteria.push({ fieldName: "enterpriseName", operator: "like", value: `%${enterpriseName}%` });
+        if (enterpriseName)
+            criteria.push({ fieldName: "enterpriseName", operator: "like", value: `%${enterpriseName}%` });
         if (userName) criteria.push({ fieldName: "user.name", operator: "like", value: `%${userName}%` });
 
         const scoringMap = { cold: 1, warm: 2, hot: 3 };
-        if (leadScoringSelect) criteria.push({ fieldName: "leadScoringSelect", operator: "=", value: scoringMap[leadScoringSelect] });
+        if (leadScoringSelect)
+            criteria.push({ fieldName: "leadScoringSelect", operator: "=", value: scoringMap[leadScoringSelect] });
         if (isConverted !== undefined) criteria.push({ fieldName: "isConverted", operator: "=", value: isConverted });
         if (isNurturing !== undefined) criteria.push({ fieldName: "isNurturing", operator: "=", value: isNurturing });
         if (!archived) criteria.push({ fieldName: "archived", operator: "=", value: false });
@@ -584,7 +632,20 @@ server.registerTool(
             primaryAddress: z.string().optional().describe("Adresse (texte libre)"),
         },
     },
-    async ({ firstName, name, enterpriseName, emailAddress, fixedPhone, mobilePhone, userId, sourceId, leadScoringSelect, description, webSite, primaryAddress }) => {
+    async ({
+        firstName,
+        name,
+        enterpriseName,
+        emailAddress,
+        fixedPhone,
+        mobilePhone,
+        userId,
+        sourceId,
+        leadScoringSelect,
+        description,
+        webSite,
+        primaryAddress,
+    }) => {
         const scoringMap = { cold: 1, warm: 2, hot: 3 };
         const data: Record<string, unknown> = { name };
 
@@ -620,7 +681,8 @@ async function axelorCreate(className: string, data: Record<string, unknown>): P
 server.registerTool(
     "search_opportunities",
     {
-        description: "Rechercher des opportunités CRM dans Axelor. Filtres : nom, client, responsable, statut de l'étape de vente.",
+        description:
+            "Rechercher des opportunités CRM dans Axelor. Filtres : nom, client, responsable, statut de l'étape de vente.",
         inputSchema: {
             name: z.string().optional().describe("Nom (partiel) de l'opportunité"),
             partnerName: z.string().optional().describe("Nom (partiel) du client / prospect"),
@@ -677,7 +739,21 @@ server.registerTool(
             customerDescription: z.string().optional().describe("Description client"),
         },
     },
-    async ({ name, partnerId, contactId, userId, amount, probability, expectedCloseDate, opportunityStatusId, opportunityTypeId, sourceId, currencyId, description, customerDescription }) => {
+    async ({
+        name,
+        partnerId,
+        contactId,
+        userId,
+        amount,
+        probability,
+        expectedCloseDate,
+        opportunityStatusId,
+        opportunityTypeId,
+        sourceId,
+        currencyId,
+        description,
+        customerDescription,
+    }) => {
         const data: Record<string, unknown> = {
             name,
             partner: { id: partnerId },
@@ -705,7 +781,13 @@ type SaleOrderLine = {
     id: number;
     typeSelect: number;
     productName?: string;
-    product?: { id: number; code?: string; name?: string; "productFamily.name"?: string; "productCategory.name"?: string };
+    product?: {
+        id: number;
+        code?: string;
+        name?: string;
+        "productFamily.name"?: string;
+        "productCategory.name"?: string;
+    };
     qty?: number;
     "unit.name"?: string;
     price?: number;
@@ -728,7 +810,9 @@ server.registerTool(
             groupBy: z
                 .enum(["product", "family", "category"])
                 .optional()
-                .describe("Axe d'agrégation : product (par produit, défaut), family (par famille), category (par catégorie)"),
+                .describe(
+                    "Axe d'agrégation : product (par produit, défaut), family (par famille), category (par catégorie)",
+                ),
             clientName: z.string().optional().describe("Filtrer par client (nom partiel)"),
             topN: z.number().optional().describe("Nombre de lignes à afficher (défaut : 20)"),
         },
@@ -742,7 +826,8 @@ server.registerTool(
             // Exclure les commandes annulées
             { fieldName: "saleOrder.statusSelect", operator: "!=", value: 5 },
         ];
-        if (clientName) criteria.push({ fieldName: "saleOrder.clientPartner.name", operator: "like", value: `%${clientName}%` });
+        if (clientName)
+            criteria.push({ fieldName: "saleOrder.clientPartner.name", operator: "like", value: `%${clientName}%` });
 
         const { data, total } = await axelorSearch(CLASSES.saleOrderLine, SALE_ORDER_LINE_FIELDS, criteria, {
             limit: 5000,
@@ -792,16 +877,18 @@ server.registerTool(
             g.byMonth[month] = (g.byMonth[month] ?? 0) + exTaxTotal;
         }
 
-        const sorted = [...groups.values()]
-            .sort((a, b) => b.exTaxTotal - a.exTaxTotal)
-            .slice(0, topN);
+        const sorted = [...groups.values()].sort((a, b) => b.exTaxTotal - a.exTaxTotal).slice(0, topN);
 
         const totalCA = sorted.reduce((s, g) => s + g.exTaxTotal, 0);
-        const months = [...new Set(lines.map(l => l["saleOrder.orderDate"]?.substring(0, 7) ?? "").filter(Boolean))].sort();
+        const months = [
+            ...new Set(lines.map((l) => l["saleOrder.orderDate"]?.substring(0, 7) ?? "").filter(Boolean)),
+        ].sort();
 
-        const rows = sorted.map(g => {
+        const rows = sorted.map((g) => {
             const pct = totalCA > 0 ? ((g.exTaxTotal / totalCA) * 100).toFixed(1) : "0.0";
-            const monthCols = months.map(m => `${(g.byMonth[m] ?? 0).toLocaleString("fr-FR", { maximumFractionDigits: 0 })} €`).join(" | ");
+            const monthCols = months
+                .map((m) => `${(g.byMonth[m] ?? 0).toLocaleString("fr-FR", { maximumFractionDigits: 0 })} €`)
+                .join(" | ");
             return `• ${g.label}\n  CA: ${g.exTaxTotal.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} € (${pct}%) — Qté: ${g.qty.toFixed(0)} — ${g.orderCount.size} commande(s)\n  ${months.join(" | ")}\n  ${monthCols}`;
         });
 
@@ -847,16 +934,32 @@ server.registerTool(
             operationTypeSelect: z
                 .enum(["customer_invoice", "customer_refund", "supplier_invoice", "supplier_refund"])
                 .optional()
-                .describe("Type : customer_invoice=3, customer_refund=4, supplier_invoice=1, supplier_refund=2 (défaut : customer_invoice)"),
+                .describe(
+                    "Type : customer_invoice=3, customer_refund=4, supplier_invoice=1, supplier_refund=2 (défaut : customer_invoice)",
+                ),
             dateFrom: z.string().optional().describe("Date de facture minimale (YYYY-MM-DD)"),
             dateTo: z.string().optional().describe("Date de facture maximale (YYYY-MM-DD)"),
             dueDateTo: z.string().optional().describe("Échéance maximale (YYYY-MM-DD) — utile pour les impayés"),
-            unpaidOnly: z.boolean().optional().describe("Si true, retourne uniquement les factures avec un montant restant dû > 0"),
+            unpaidOnly: z
+                .boolean()
+                .optional()
+                .describe("Si true, retourne uniquement les factures avec un montant restant dû > 0"),
             limit: z.number().optional().describe("Nombre de résultats (défaut : 20)"),
             offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
         },
     },
-    async ({ partnerName, invoiceId, statusSelect, operationTypeSelect = "customer_invoice", dateFrom, dateTo, dueDateTo, unpaidOnly, limit, offset }) => {
+    async ({
+        partnerName,
+        invoiceId,
+        statusSelect,
+        operationTypeSelect = "customer_invoice",
+        dateFrom,
+        dateTo,
+        dueDateTo,
+        unpaidOnly,
+        limit,
+        offset,
+    }) => {
         const statusMap = { draft: 1, validated: 2, ventilated: 3, cancelled: 4 };
         const operationMap = { customer_invoice: 3, customer_refund: 4, supplier_invoice: 1, supplier_refund: 2 };
 
@@ -865,12 +968,12 @@ server.registerTool(
         ];
 
         if (partnerName) criteria.push({ fieldName: "partner.name", operator: "like", value: `%${partnerName}%` });
-        if (invoiceId)   criteria.push({ fieldName: "invoiceId", operator: "like", value: `%${invoiceId}%` });
+        if (invoiceId) criteria.push({ fieldName: "invoiceId", operator: "like", value: `%${invoiceId}%` });
         if (statusSelect) criteria.push({ fieldName: "statusSelect", operator: "=", value: statusMap[statusSelect] });
-        if (dateFrom)    criteria.push({ fieldName: "invoiceDate", operator: ">=", value: dateFrom });
-        if (dateTo)      criteria.push({ fieldName: "invoiceDate", operator: "<=", value: dateTo });
-        if (dueDateTo)   criteria.push({ fieldName: "dueDate", operator: "<=", value: dueDateTo });
-        if (unpaidOnly)  criteria.push({ fieldName: "amountRemaining", operator: ">", value: 0 });
+        if (dateFrom) criteria.push({ fieldName: "invoiceDate", operator: ">=", value: dateFrom });
+        if (dateTo) criteria.push({ fieldName: "invoiceDate", operator: "<=", value: dateTo });
+        if (dueDateTo) criteria.push({ fieldName: "dueDate", operator: "<=", value: dueDateTo });
+        if (unpaidOnly) criteria.push({ fieldName: "amountRemaining", operator: ">", value: 0 });
 
         const { data, total } = await axelorSearch(CLASSES.invoice, INVOICE_FIELDS, criteria, {
             sortBy: ["-invoiceDate"],
