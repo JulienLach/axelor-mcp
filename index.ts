@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { CLASSES, LEAD_FIELDS, OPPORTUNITY_FIELDS, PARTNER_FIELDS, PRODUCT_FIELDS, SALE_ANALYSIS_FIELDS, SALE_ORDER_FIELDS } from "./fields.ts";
+import { CLASSES, INVOICE_FIELDS, LEAD_FIELDS, OPPORTUNITY_FIELDS, PARTNER_FIELDS, PRODUCT_FIELDS, SALE_ANALYSIS_FIELDS, SALE_ORDER_FIELDS, SALE_ORDER_LINE_FIELDS } from "./fields.ts";
 
 const BASE_URL = process.env.AXELOR_BASE_URL;
 let sessionCookie = "";
@@ -696,6 +696,202 @@ server.registerTool(
 
         const result = await axelorCreate(CLASSES.opportunity, data);
         return text(result ? JSON.stringify(result, null, 2) : "Échec de la création de l'opportunité.");
+    },
+);
+
+// ── Analyse produits (SaleOrderLine) ─────────────────────────────────────────
+
+type SaleOrderLine = {
+    id: number;
+    typeSelect: number;
+    productName?: string;
+    product?: { id: number; code?: string; name?: string; "productFamily.name"?: string; "productCategory.name"?: string };
+    qty?: number;
+    "unit.name"?: string;
+    price?: number;
+    exTaxTotal?: number;
+    "saleOrder.id"?: number;
+    "saleOrder.saleOrderSeq"?: string;
+    "saleOrder.orderDate"?: string;
+    "saleOrder.statusSelect"?: number;
+    "saleOrder.clientPartner.name"?: string;
+};
+
+server.registerTool(
+    "analyze_products",
+    {
+        description:
+            "Analyse les lignes de commande (SaleOrderLine) pour identifier les produits les plus vendus sur une période : CA HT, quantité, répartition mensuelle, famille et catégorie produit.",
+        inputSchema: {
+            dateFrom: z.string().describe("Date de début (YYYY-MM-DD) — filtre sur saleOrder.orderDate"),
+            dateTo: z.string().describe("Date de fin (YYYY-MM-DD) — filtre sur saleOrder.orderDate"),
+            groupBy: z
+                .enum(["product", "family", "category"])
+                .optional()
+                .describe("Axe d'agrégation : product (par produit, défaut), family (par famille), category (par catégorie)"),
+            clientName: z.string().optional().describe("Filtrer par client (nom partiel)"),
+            topN: z.number().optional().describe("Nombre de lignes à afficher (défaut : 20)"),
+        },
+    },
+    async ({ dateFrom, dateTo, groupBy = "product", clientName, topN = 20 }) => {
+        const criteria: Criterion[] = [
+            { fieldName: "saleOrder.orderDate", operator: ">=", value: dateFrom },
+            { fieldName: "saleOrder.orderDate", operator: "<=", value: dateTo },
+            // Exclure les lignes titre/commentaire (typeSelect = 0 = normal)
+            { fieldName: "typeSelect", operator: "=", value: 0 },
+            // Exclure les commandes annulées
+            { fieldName: "saleOrder.statusSelect", operator: "!=", value: 5 },
+        ];
+        if (clientName) criteria.push({ fieldName: "saleOrder.clientPartner.name", operator: "like", value: `%${clientName}%` });
+
+        const { data, total } = await axelorSearch(CLASSES.saleOrderLine, SALE_ORDER_LINE_FIELDS, criteria, {
+            limit: 5000,
+            sortBy: ["saleOrder.orderDate"],
+        });
+
+        const lines = data as SaleOrderLine[];
+
+        type GroupStats = {
+            label: string;
+            exTaxTotal: number;
+            qty: number;
+            orderCount: Set<number>;
+            byMonth: Record<string, number>;
+        };
+
+        const groups = new Map<string, GroupStats>();
+
+        for (const line of lines) {
+            const exTaxTotal = Number(line.exTaxTotal ?? 0);
+            const qty = Number(line.qty ?? 0);
+            const month = line["saleOrder.orderDate"]?.substring(0, 7) ?? "inconnu";
+            const orderId = line["saleOrder.id"] ?? 0;
+
+            let key: string;
+            let label: string;
+
+            if (groupBy === "family") {
+                key = line.product?.["productFamily.name"] ?? "Sans famille";
+                label = key;
+            } else if (groupBy === "category") {
+                key = line.product?.["productCategory.name"] ?? "Sans catégorie";
+                label = key;
+            } else {
+                key = String(line.product?.id ?? `noref_${line.productName}`);
+                const code = line.product?.code ? `[${line.product.code}] ` : "";
+                label = `${code}${line.productName ?? line.product?.name ?? "Produit inconnu"}`;
+            }
+
+            if (!groups.has(key)) {
+                groups.set(key, { label, exTaxTotal: 0, qty: 0, orderCount: new Set(), byMonth: {} });
+            }
+            const g = groups.get(key)!;
+            g.exTaxTotal += exTaxTotal;
+            g.qty += qty;
+            g.orderCount.add(orderId);
+            g.byMonth[month] = (g.byMonth[month] ?? 0) + exTaxTotal;
+        }
+
+        const sorted = [...groups.values()]
+            .sort((a, b) => b.exTaxTotal - a.exTaxTotal)
+            .slice(0, topN);
+
+        const totalCA = sorted.reduce((s, g) => s + g.exTaxTotal, 0);
+        const months = [...new Set(lines.map(l => l["saleOrder.orderDate"]?.substring(0, 7) ?? "").filter(Boolean))].sort();
+
+        const rows = sorted.map(g => {
+            const pct = totalCA > 0 ? ((g.exTaxTotal / totalCA) * 100).toFixed(1) : "0.0";
+            const monthCols = months.map(m => `${(g.byMonth[m] ?? 0).toLocaleString("fr-FR", { maximumFractionDigits: 0 })} €`).join(" | ");
+            return `• ${g.label}\n  CA: ${g.exTaxTotal.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} € (${pct}%) — Qté: ${g.qty.toFixed(0)} — ${g.orderCount.size} commande(s)\n  ${months.join(" | ")}\n  ${monthCols}`;
+        });
+
+        const header = [
+            `Analyse produits — ${dateFrom} → ${dateTo}`,
+            `Groupé par : ${groupBy} | ${lines.length} lignes sur ${total} | Top ${topN}`,
+            `CA total analysé : ${totalCA.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} €`,
+            "",
+        ].join("\n");
+
+        return text(header + rows.join("\n\n"));
+    },
+);
+
+// ── Factures (Invoice) ────────────────────────────────────────────────────────
+
+/*
+  statusSelect :
+    1 = Brouillon
+    2 = Validée
+    3 = Ventilée
+    4 = Annulée
+
+  operationTypeSelect :
+    1 = Facture client
+    2 = Avoir client
+    3 = Facture fournisseur
+    4 = Avoir fournisseur
+*/
+
+server.registerTool(
+    "search_invoices",
+    {
+        description:
+            "Rechercher des factures (Invoice) dans Axelor. Filtres : client, numéro de facture, statut, type de document, période, montant restant dû.",
+        inputSchema: {
+            partnerName: z.string().optional().describe("Nom (partiel) du client / fournisseur"),
+            invoiceId: z.string().optional().describe("Numéro de facture (ex: FAC-00042)"),
+            statusSelect: z
+                .enum(["draft", "validated", "ventilated", "cancelled"])
+                .optional()
+                .describe("Statut : draft=1, validated=2, ventilated=3, cancelled=4"),
+            operationTypeSelect: z
+                .enum(["customer_invoice", "customer_refund", "supplier_invoice", "supplier_refund"])
+                .optional()
+                .describe("Type : customer_invoice=3, customer_refund=4, supplier_invoice=1, supplier_refund=2 (défaut : customer_invoice)"),
+            dateFrom: z.string().optional().describe("Date de facture minimale (YYYY-MM-DD)"),
+            dateTo: z.string().optional().describe("Date de facture maximale (YYYY-MM-DD)"),
+            dueDateTo: z.string().optional().describe("Échéance maximale (YYYY-MM-DD) — utile pour les impayés"),
+            unpaidOnly: z.boolean().optional().describe("Si true, retourne uniquement les factures avec un montant restant dû > 0"),
+            limit: z.number().optional().describe("Nombre de résultats (défaut : 20)"),
+            offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
+        },
+    },
+    async ({ partnerName, invoiceId, statusSelect, operationTypeSelect = "customer_invoice", dateFrom, dateTo, dueDateTo, unpaidOnly, limit, offset }) => {
+        const statusMap = { draft: 1, validated: 2, ventilated: 3, cancelled: 4 };
+        const operationMap = { customer_invoice: 3, customer_refund: 4, supplier_invoice: 1, supplier_refund: 2 };
+
+        const criteria: Criterion[] = [
+            { fieldName: "operationTypeSelect", operator: "=", value: operationMap[operationTypeSelect] },
+        ];
+
+        if (partnerName) criteria.push({ fieldName: "partner.name", operator: "like", value: `%${partnerName}%` });
+        if (invoiceId)   criteria.push({ fieldName: "invoiceId", operator: "like", value: `%${invoiceId}%` });
+        if (statusSelect) criteria.push({ fieldName: "statusSelect", operator: "=", value: statusMap[statusSelect] });
+        if (dateFrom)    criteria.push({ fieldName: "invoiceDate", operator: ">=", value: dateFrom });
+        if (dateTo)      criteria.push({ fieldName: "invoiceDate", operator: "<=", value: dateTo });
+        if (dueDateTo)   criteria.push({ fieldName: "dueDate", operator: "<=", value: dueDateTo });
+        if (unpaidOnly)  criteria.push({ fieldName: "amountRemaining", operator: ">", value: 0 });
+
+        const { data, total } = await axelorSearch(CLASSES.invoice, INVOICE_FIELDS, criteria, {
+            sortBy: ["-invoiceDate"],
+            limit: limit ?? 20,
+            offset: offset ?? 0,
+        });
+        return text(formatResult("facture", data, total));
+    },
+);
+
+server.registerTool(
+    "get_invoice",
+    {
+        description: "Obtenir tous les détails d'une facture Axelor par son ID",
+        inputSchema: {
+            id: z.number().describe("ID de la facture (champ 'id' retourné par search_invoices)"),
+        },
+    },
+    async ({ id }) => {
+        const invoice = await axelorGetById(CLASSES.invoice, id);
+        return text(invoice ? JSON.stringify(invoice, null, 2) : `Facture ID ${id} introuvable.`);
     },
 );
 

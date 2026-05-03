@@ -3,9 +3,11 @@
 export const CLASSES = {
     partner: "com.axelor.apps.base.db.Partner",
     saleOrder: "com.axelor.apps.sale.db.SaleOrder",
+    saleOrderLine: "com.axelor.apps.sale.db.SaleOrderLine",
     product: "com.axelor.apps.base.db.Product",
     opportunity: "com.axelor.apps.crm.db.Opportunity",
     lead: "com.axelor.apps.crm.db.Lead",
+    invoice: "com.axelor.apps.account.db.Invoice",
 } as const;
 
 // ── Champs par modèle ─────────────────────────────────────────────────────────
@@ -167,6 +169,28 @@ export const OPPORTUNITY_FIELDS = [
     "updatedOn",
 ];
 
+export const SALE_ORDER_LINE_FIELDS = [
+    "id",
+    "sequence",
+    "typeSelect",
+    "productName",
+    "product.id",
+    "product.code",
+    "product.name",
+    "product.productFamily.name",
+    "product.productCategory.name",
+    "qty",
+    "unit.name",
+    "price",
+    "priceDiscounted",
+    "exTaxTotal",
+    "saleOrder.id",
+    "saleOrder.saleOrderSeq",
+    "saleOrder.orderDate",
+    "saleOrder.statusSelect",
+    "saleOrder.clientPartner.name",
+];
+
 export const SALE_ANALYSIS_FIELDS = [
     "id",
     "orderDate",
@@ -180,6 +204,38 @@ export const SALE_ANALYSIS_FIELDS = [
     "clientPartner",
     "salespersonUser",
     "currency",
+];
+
+export const INVOICE_FIELDS = [
+    "id",
+    "invoiceId",
+    "invoiceDate",
+    "dueDate",
+    "nextDueDate",
+    "statusSelect",
+    "operationTypeSelect",
+    "partner",
+    "contactPartner",
+    "saleOrder",
+    "project",
+    "exTaxTotal",
+    "taxTotal",
+    "inTaxTotal",
+    "amountPaid",
+    "amountRemaining",
+    "companyInTaxTotal",
+    "companyInTaxTotalRemaining",
+    "currency",
+    "company",
+    "paymentCondition",
+    "paymentMode",
+    "paymentDate",
+    "externalReference",
+    "internalReference",
+    "validatedDateTime",
+    "ventilatedDateTime",
+    "createdOn",
+    "updatedOn",
 ];
 
 export const SALE_ORDER_FIELDS = [

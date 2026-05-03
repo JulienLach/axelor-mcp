@@ -115,8 +115,13 @@ Une fois connecté, Claude comprend les demandes en langage naturel. Exemples de
 - `get_sale_order` — *"Détails de la commande ID 123"*
 - `create_sale_order` — *"Crée un devis pour le client Dupont avec 2 jours de prestation"*
 
+**Factures**
+- `search_invoices` — *"Factures impayées du client Dupont"*, *"Factures émises en janvier 2026"*, *"Avoirs clients du trimestre"* (filtres : client, numéro, statut, type, période, échéance, unpaidOnly)
+- `get_invoice` — *"Détails de la facture ID 456"*
+
 **Analyse des ventes**
 - `analyze_sales` — *"Tendance mensuelle de mon CA sur les 3 derniers mois"*, *"Top clients par CA sur 2025"*, *"Performance par commercial ce trimestre"* (groupBy : month / client / salesperson / status ; filtres : période, statut, client, commercial)
+- `analyze_products` — *"Top 15 produits par CA sur le dernier trimestre"*, *"Répartition mensuelle des ventes par famille de produits"* (groupBy : product / family / category ; filtres : période, client, topN)
 
 **Opportunités CRM**
 - `search_opportunities` — *"Liste mes opportunités ouvertes pour le client Dupont"*
