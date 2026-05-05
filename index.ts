@@ -5,12 +5,16 @@ import {
     CLASSES,
     INVOICE_FIELDS,
     LEAD_FIELDS,
+    OPPORTUNITY_ANALYSIS_FIELDS,
     OPPORTUNITY_FIELDS,
     PARTNER_FIELDS,
     PRODUCT_FIELDS,
+    PROJECT_ANALYSIS_FIELDS,
+    PROJECT_FIELDS,
     SALE_ANALYSIS_FIELDS,
     SALE_ORDER_FIELDS,
     SALE_ORDER_LINE_FIELDS,
+    TIMESHEET_FIELDS,
 } from "./fields.ts";
 
 const BASE_URL = process.env.AXELOR_BASE_URL;
@@ -995,6 +999,439 @@ server.registerTool(
     async ({ id }) => {
         const invoice = await axelorGetById(CLASSES.invoice, id);
         return text(invoice ? JSON.stringify(invoice, null, 2) : `Facture ID ${id} introuvable.`);
+    },
+);
+
+// ── Analyse des opportunités (CRM) ───────────────────────────────────────────
+
+type OpportunityAnalysis = {
+    id: number;
+    name: string;
+    amount: number | string | null;
+    probability: number | string | null;
+    worstCase: number | string | null;
+    bestCase: number | string | null;
+    expectedCloseDate: string | null;
+    opportunityStatus: { id: number; name: string } | null;
+    partner: { id: number; name: string } | null;
+    user: { id: number; name: string } | null;
+    source: { id: number; name: string } | null;
+    createdOn: string | null;
+};
+
+type OppGroup = {
+    key: string;
+    count: number;
+    totalAmount: number;
+    weightedAmount: number;
+    worstCase: number;
+    bestCase: number;
+    avgProbability: number;
+};
+
+function groupOpportunities(
+    opps: OpportunityAnalysis[],
+    groupBy: "status" | "salesperson" | "source" | "month",
+): OppGroup[] {
+    const map = new Map<string, OppGroup & { _probabilitySum: number }>();
+
+    for (const o of opps) {
+        let key: string;
+        if (groupBy === "month")
+            key = o.expectedCloseDate ? o.expectedCloseDate.slice(0, 7) : "sans date";
+        else if (groupBy === "salesperson") key = o.user?.name ?? "non assigné";
+        else if (groupBy === "source") key = o.source?.name ?? "sans source";
+        else key = o.opportunityStatus?.name ?? "sans statut";
+
+        const g = map.get(key) ?? {
+            key,
+            count: 0,
+            totalAmount: 0,
+            weightedAmount: 0,
+            worstCase: 0,
+            bestCase: 0,
+            avgProbability: 0,
+            _probabilitySum: 0,
+        };
+        const amount = Number(o.amount) || 0;
+        const prob = Number(o.probability) || 0;
+        g.count++;
+        g.totalAmount += amount;
+        g.weightedAmount += (amount * prob) / 100;
+        g.worstCase += Number(o.worstCase) || 0;
+        g.bestCase += Number(o.bestCase) || 0;
+        g._probabilitySum += prob;
+        map.set(key, g);
+    }
+
+    const groups: OppGroup[] = Array.from(map.values()).map(({ _probabilitySum, ...g }) => ({
+        ...g,
+        avgProbability: g.count > 0 ? Math.round((_probabilitySum / g.count) * 10) / 10 : 0,
+    }));
+
+    return groupBy === "month"
+        ? groups.sort((a, b) => a.key.localeCompare(b.key))
+        : groups.sort((a, b) => b.weightedAmount - a.weightedAmount);
+}
+
+server.registerTool(
+    "analyze_opportunities",
+    {
+        description:
+            "Analyse agrégée du pipeline CRM : montant total, pipeline pondéré (amount × probabilité), meilleur/pire cas. Groupé par statut, commercial, source ou mois de closing prévu. Filtres : période expectedCloseDate, client, commercial.",
+        inputSchema: {
+            groupBy: z
+                .enum(["status", "salesperson", "source", "month"])
+                .describe(
+                    "Axe d'analyse : status (étapes du pipeline), salesperson (performance commerciaux), source (origine des opps), month (répartition par mois de closing prévu)",
+                ),
+            dateFrom: z.string().optional().describe("Date de closing prévue minimale (YYYY-MM-DD)"),
+            dateTo: z.string().optional().describe("Date de closing prévue maximale (YYYY-MM-DD)"),
+            partnerName: z.string().optional().describe("Filtrer par client / prospect (nom partiel)"),
+            userName: z.string().optional().describe("Filtrer par commercial (nom partiel)"),
+            includeArchived: z.boolean().optional().describe("Inclure les opportunités archivées (défaut : false)"),
+            topN: z.number().optional().describe("Nombre de groupes à afficher (défaut : 20)"),
+        },
+    },
+    async ({ groupBy, dateFrom, dateTo, partnerName, userName, includeArchived = false, topN = 20 }) => {
+        const criteria: Criterion[] = [];
+
+        if (dateFrom) criteria.push({ fieldName: "expectedCloseDate", operator: ">=", value: dateFrom });
+        if (dateTo) criteria.push({ fieldName: "expectedCloseDate", operator: "<=", value: dateTo });
+        if (partnerName) criteria.push({ fieldName: "partner.name", operator: "like", value: `%${partnerName}%` });
+        if (userName) criteria.push({ fieldName: "user.name", operator: "like", value: `%${userName}%` });
+        if (!includeArchived) criteria.push({ fieldName: "archived", operator: "=", value: false });
+        if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
+
+        const { data, total } = await axelorSearch(CLASSES.opportunity, OPPORTUNITY_ANALYSIS_FIELDS, criteria, {
+            limit: 2000,
+            sortBy: ["expectedCloseDate"],
+        });
+
+        const opps = data as OpportunityAnalysis[];
+        const allGroups = groupOpportunities(opps, groupBy);
+        const displayed = allGroups.slice(0, topN);
+
+        const periode = dateFrom || dateTo ? `${dateFrom ?? "…"} → ${dateTo ?? "…"}` : "toutes périodes";
+        const lines: string[] = [
+            `Analyse opportunités — groupBy: ${groupBy} | Période closing: ${periode}`,
+            `${opps.length} opportunité(s) analysée(s) sur ${total} au total`,
+            "",
+            `Rang | ${"Groupe".padEnd(28)} | Nb  | ${"Montant total".padStart(14)} | ${"Pipeline pondéré".padStart(16)} | ${"Pire cas".padStart(12)} | ${"Meilleur cas".padStart(12)} | Prob. moy`,
+            `-----|${"-".repeat(30)}|-----|${"-".repeat(16)}|${"-".repeat(18)}|${"-".repeat(14)}|${"-".repeat(14)}|----------`,
+        ];
+
+        displayed.forEach((g, i) => {
+            lines.push(
+                `${String(i + 1).padStart(4)} | ${g.key.padEnd(28)} | ${String(g.count).padStart(3)} | ${fmt(g.totalAmount).padStart(14)} | ${fmt(g.weightedAmount).padStart(16)} | ${fmt(g.worstCase).padStart(12)} | ${fmt(g.bestCase).padStart(12)} | ${String(g.avgProbability.toFixed(1) + " %").padStart(9)}`,
+            );
+        });
+
+        const tot = allGroups.reduce(
+            (acc, g) => ({
+                count: acc.count + g.count,
+                totalAmount: acc.totalAmount + g.totalAmount,
+                weightedAmount: acc.weightedAmount + g.weightedAmount,
+                worstCase: acc.worstCase + g.worstCase,
+                bestCase: acc.bestCase + g.bestCase,
+            }),
+            { count: 0, totalAmount: 0, weightedAmount: 0, worstCase: 0, bestCase: 0 },
+        );
+
+        lines.push(
+            `-----|${"-".repeat(30)}|-----|${"-".repeat(16)}|${"-".repeat(18)}|${"-".repeat(14)}|${"-".repeat(14)}|----------`,
+        );
+        lines.push(
+            `TOTAL| ${"—".padEnd(28)} | ${String(tot.count).padStart(3)} | ${fmt(tot.totalAmount).padStart(14)} | ${fmt(tot.weightedAmount).padStart(16)} | ${fmt(tot.worstCase).padStart(12)} | ${fmt(tot.bestCase).padStart(12)} |`,
+        );
+
+        if (opps.length < total) {
+            lines.push(
+                "",
+                `⚠ Seules ${opps.length} opportunités sur ${total} ont été analysées (limite 2000) — affiner les filtres.`,
+            );
+        }
+
+        return text(lines.join("\n"));
+    },
+);
+
+// ── Projets ───────────────────────────────────────────────────────────────────
+
+server.registerTool(
+    "search_projects",
+    {
+        description:
+            "Rechercher des projets dans Axelor. Filtres : client, responsable, statut, projets en retard (toDate dépassée). Inclut consommé vs vendu (soldTime, spentTime), avancement et données financières.",
+        inputSchema: {
+            clientName: z.string().optional().describe("Nom (partiel) du client (clientPartner)"),
+            assignedToName: z.string().optional().describe("Nom (partiel) du responsable (assignedTo)"),
+            projectStatusName: z
+                .string()
+                .optional()
+                .describe("Nom (partiel) du statut projet (ex: En cours, Terminé)"),
+            isOverdue: z
+                .boolean()
+                .optional()
+                .describe("Si true, retourne uniquement les projets dont la date de fin (toDate) est dépassée"),
+            isBusinessProject: z
+                .boolean()
+                .optional()
+                .describe("Filtrer les projets commerciaux (isBusinessProject = true)"),
+            archived: z.boolean().optional().describe("Inclure les projets archivés (défaut : false)"),
+            limit: z.number().optional().describe("Nombre de résultats (défaut : 20)"),
+            offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
+        },
+    },
+    async ({ clientName, assignedToName, projectStatusName, isOverdue, isBusinessProject, archived, limit, offset }) => {
+        const today = new Date().toISOString().split("T")[0];
+        const criteria: Criterion[] = [];
+
+        if (clientName)
+            criteria.push({ fieldName: "clientPartner.name", operator: "like", value: `%${clientName}%` });
+        if (assignedToName)
+            criteria.push({ fieldName: "assignedTo.name", operator: "like", value: `%${assignedToName}%` });
+        if (projectStatusName)
+            criteria.push({ fieldName: "projectStatus.name", operator: "like", value: `%${projectStatusName}%` });
+        if (isOverdue) criteria.push({ fieldName: "toDate", operator: "<", value: today });
+        if (isBusinessProject !== undefined)
+            criteria.push({ fieldName: "isBusinessProject", operator: "=", value: isBusinessProject });
+        if (!archived) criteria.push({ fieldName: "archived", operator: "=", value: false });
+        if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
+
+        const { data, total } = await axelorSearch(CLASSES.project, PROJECT_FIELDS, criteria, {
+            sortBy: ["toDate"],
+            limit: limit ?? 20,
+            offset: offset ?? 0,
+        });
+        return text(formatResult("projet", data, total));
+    },
+);
+
+type ProjectAnalysis = {
+    id: number;
+    name: string;
+    clientPartner: { id: number; name: string } | null;
+    assignedTo: { id: number; name: string } | null;
+    projectStatus: { id: number; name: string } | null;
+    fromDate: string | null;
+    toDate: string | null;
+    soldTime: number | string | null;
+    spentTime: number | string | null;
+    plannedTime: number | string | null;
+    percentageOfProgress: number | string | null;
+    percentageOfConsumption: number | string | null;
+    totalInvoiced: number | string | null;
+    totalRealCosts: number | string | null;
+    isBusinessProject: boolean | null;
+};
+
+type ProjectGroup = {
+    key: string;
+    count: number;
+    soldTime: number;
+    spentTime: number;
+    plannedTime: number;
+    totalInvoiced: number;
+    totalRealCosts: number;
+    avgConsumption: number;
+    overdueCount: number;
+};
+
+function groupProjects(
+    projects: ProjectAnalysis[],
+    groupBy: "client" | "assignedTo" | "status",
+    today: string,
+): ProjectGroup[] {
+    const map = new Map<string, ProjectGroup & { _consumptionSum: number }>();
+
+    for (const p of projects) {
+        let key: string;
+        if (groupBy === "client") key = p.clientPartner?.name ?? "sans client";
+        else if (groupBy === "assignedTo") key = p.assignedTo?.name ?? "non assigné";
+        else key = p.projectStatus?.name ?? "sans statut";
+
+        const g = map.get(key) ?? {
+            key,
+            count: 0,
+            soldTime: 0,
+            spentTime: 0,
+            plannedTime: 0,
+            totalInvoiced: 0,
+            totalRealCosts: 0,
+            avgConsumption: 0,
+            overdueCount: 0,
+            _consumptionSum: 0,
+        };
+        g.count++;
+        g.soldTime += Number(p.soldTime) || 0;
+        g.spentTime += Number(p.spentTime) || 0;
+        g.plannedTime += Number(p.plannedTime) || 0;
+        g.totalInvoiced += Number(p.totalInvoiced) || 0;
+        g.totalRealCosts += Number(p.totalRealCosts) || 0;
+        g._consumptionSum += Number(p.percentageOfConsumption) || 0;
+        if (p.toDate && p.toDate < today) g.overdueCount++;
+        map.set(key, g);
+    }
+
+    return Array.from(map.values())
+        .map(({ _consumptionSum, ...g }) => ({
+            ...g,
+            avgConsumption: g.count > 0 ? Math.round((_consumptionSum / g.count) * 10) / 10 : 0,
+        }))
+        .sort((a, b) => b.count - a.count);
+}
+
+server.registerTool(
+    "analyze_projects",
+    {
+        description:
+            "Analyse agrégée des projets : temps vendu vs consommé vs planifié, CA facturé, coûts réels, projets en retard. Groupé par client, responsable ou statut. Filtres : client, responsable, retard, projets commerciaux.",
+        inputSchema: {
+            groupBy: z
+                .enum(["client", "assignedTo", "status"])
+                .describe(
+                    "Axe d'analyse : client (répartition par client), assignedTo (charge par responsable), status (répartition par statut)",
+                ),
+            clientName: z.string().optional().describe("Filtrer par client (nom partiel)"),
+            assignedToName: z.string().optional().describe("Filtrer par responsable (nom partiel)"),
+            isOverdue: z
+                .boolean()
+                .optional()
+                .describe("Si true, restreindre aux projets dont la date de fin est dépassée"),
+            isBusinessProject: z.boolean().optional().describe("Filtrer les projets commerciaux uniquement"),
+            includeArchived: z.boolean().optional().describe("Inclure les projets archivés (défaut : false)"),
+            topN: z.number().optional().describe("Nombre de groupes à afficher (défaut : 20)"),
+        },
+    },
+    async ({ groupBy, clientName, assignedToName, isOverdue, isBusinessProject, includeArchived = false, topN = 20 }) => {
+        const today = new Date().toISOString().split("T")[0];
+        const criteria: Criterion[] = [];
+
+        if (clientName)
+            criteria.push({ fieldName: "clientPartner.name", operator: "like", value: `%${clientName}%` });
+        if (assignedToName)
+            criteria.push({ fieldName: "assignedTo.name", operator: "like", value: `%${assignedToName}%` });
+        if (isOverdue) criteria.push({ fieldName: "toDate", operator: "<", value: today });
+        if (isBusinessProject !== undefined)
+            criteria.push({ fieldName: "isBusinessProject", operator: "=", value: isBusinessProject });
+        if (!includeArchived) criteria.push({ fieldName: "archived", operator: "=", value: false });
+        if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
+
+        const { data, total } = await axelorSearch(CLASSES.project, PROJECT_ANALYSIS_FIELDS, criteria, {
+            limit: 2000,
+        });
+
+        const projects = data as ProjectAnalysis[];
+        const allGroups = groupProjects(projects, groupBy, today);
+        const displayed = allGroups.slice(0, topN);
+
+        const fmtH = (h: number) => `${h.toFixed(1)} h`;
+
+        const lines: string[] = [
+            `Analyse projets — groupBy: ${groupBy}`,
+            `${projects.length} projet(s) analysé(s) sur ${total} au total`,
+            "",
+            `Rang | ${"Groupe".padEnd(28)} | Nb  | En retard | ${"Vendu".padStart(8)} | ${"Consommé".padStart(8)} | ${"Planifié".padStart(8)} | Conso% moy | ${"Facturé".padStart(12)} | ${"Coûts réels".padStart(12)}`,
+            `-----|${"-".repeat(30)}|-----|-----------|${"-".repeat(10)}|${"-".repeat(10)}|${"-".repeat(10)}|------------|${"-".repeat(14)}|${"-".repeat(14)}`,
+        ];
+
+        displayed.forEach((g, i) => {
+            lines.push(
+                `${String(i + 1).padStart(4)} | ${g.key.padEnd(28)} | ${String(g.count).padStart(3)} | ${String(g.overdueCount).padStart(9)} | ${fmtH(g.soldTime).padStart(8)} | ${fmtH(g.spentTime).padStart(8)} | ${fmtH(g.plannedTime).padStart(8)} | ${String(g.avgConsumption.toFixed(1) + " %").padStart(10)} | ${fmt(g.totalInvoiced).padStart(12)} | ${fmt(g.totalRealCosts).padStart(12)}`,
+            );
+        });
+
+        const tot = allGroups.reduce(
+            (acc, g) => ({
+                count: acc.count + g.count,
+                overdueCount: acc.overdueCount + g.overdueCount,
+                soldTime: acc.soldTime + g.soldTime,
+                spentTime: acc.spentTime + g.spentTime,
+                plannedTime: acc.plannedTime + g.plannedTime,
+                totalInvoiced: acc.totalInvoiced + g.totalInvoiced,
+                totalRealCosts: acc.totalRealCosts + g.totalRealCosts,
+            }),
+            { count: 0, overdueCount: 0, soldTime: 0, spentTime: 0, plannedTime: 0, totalInvoiced: 0, totalRealCosts: 0 },
+        );
+
+        lines.push(
+            `-----|${"-".repeat(30)}|-----|-----------|${"-".repeat(10)}|${"-".repeat(10)}|${"-".repeat(10)}|------------|${"-".repeat(14)}|${"-".repeat(14)}`,
+        );
+        lines.push(
+            `TOTAL| ${"—".padEnd(28)} | ${String(tot.count).padStart(3)} | ${String(tot.overdueCount).padStart(9)} | ${fmtH(tot.soldTime).padStart(8)} | ${fmtH(tot.spentTime).padStart(8)} | ${fmtH(tot.plannedTime).padStart(8)} |            | ${fmt(tot.totalInvoiced).padStart(12)} | ${fmt(tot.totalRealCosts).padStart(12)}`,
+        );
+
+        if (projects.length < total) {
+            lines.push(
+                "",
+                `⚠ Seuls ${projects.length} projets sur ${total} ont été analysés (limite 2000) — affiner les filtres.`,
+            );
+        }
+
+        return text(lines.join("\n"));
+    },
+);
+
+// ── Feuilles de temps (Timesheet) ────────────────────────────────────────────
+
+/*
+  statusSelect :
+    1 = Brouillon
+    2 = En attente de validation
+    3 = Validée
+    4 = Refusée
+*/
+
+server.registerTool(
+    "search_timesheets",
+    {
+        description:
+            "Rechercher des feuilles de temps (Timesheet) dans Axelor. Filtres : employé, statut, période couverte.",
+        inputSchema: {
+            employeeName: z.string().optional().describe("Nom (partiel) de l'employé"),
+            statusSelect: z
+                .enum(["draft", "waiting", "validated", "refused"])
+                .optional()
+                .describe("Statut : draft=1, waiting=2, validated=3, refused=4"),
+            dateFrom: z.string().optional().describe("Période minimale de début de feuille (YYYY-MM-DD) — filtre sur fromDate"),
+            dateTo: z.string().optional().describe("Période maximale de fin de feuille (YYYY-MM-DD) — filtre sur toDate"),
+            limit: z.number().optional().describe("Nombre de résultats (défaut : 20)"),
+            offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
+        },
+    },
+    async ({ employeeName, statusSelect, dateFrom, dateTo, limit, offset }) => {
+        const statusMap = { draft: 1, waiting: 2, validated: 3, refused: 4 };
+        const criteria: Criterion[] = [];
+
+        if (employeeName)
+            criteria.push({ fieldName: "employee.name", operator: "like", value: `%${employeeName}%` });
+        if (statusSelect)
+            criteria.push({ fieldName: "statusSelect", operator: "=", value: statusMap[statusSelect] });
+        if (dateFrom) criteria.push({ fieldName: "fromDate", operator: ">=", value: dateFrom });
+        if (dateTo) criteria.push({ fieldName: "toDate", operator: "<=", value: dateTo });
+        if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
+
+        const { data, total } = await axelorSearch(CLASSES.timesheet, TIMESHEET_FIELDS, criteria, {
+            sortBy: ["-fromDate"],
+            limit: limit ?? 20,
+            offset: offset ?? 0,
+        });
+        return text(formatResult("feuille de temps", data, total));
+    },
+);
+
+server.registerTool(
+    "get_timesheet",
+    {
+        description: "Obtenir tous les détails d'une feuille de temps Axelor par son ID, incluant les lignes saisies.",
+        inputSchema: {
+            id: z.number().describe("ID de la feuille de temps (champ 'id' retourné par search_timesheets)"),
+        },
+    },
+    async ({ id }) => {
+        const ts = await axelorGetById(CLASSES.timesheet, id);
+        return text(ts ? JSON.stringify(ts, null, 2) : `Feuille de temps ID ${id} introuvable.`);
     },
 );
 

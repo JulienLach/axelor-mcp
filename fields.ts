@@ -8,6 +8,8 @@ export const CLASSES = {
     opportunity: "com.axelor.apps.crm.db.Opportunity",
     lead: "com.axelor.apps.crm.db.Lead",
     invoice: "com.axelor.apps.account.db.Invoice",
+    project: "com.axelor.apps.project.db.Project",
+    timesheet: "com.axelor.apps.hr.db.Timesheet",
 } as const;
 
 // ── Champs par modèle ─────────────────────────────────────────────────────────
@@ -191,6 +193,21 @@ export const SALE_ORDER_LINE_FIELDS = [
     "saleOrder.clientPartner.name",
 ];
 
+export const OPPORTUNITY_ANALYSIS_FIELDS = [
+    "id",
+    "name",
+    "amount",
+    "probability",
+    "worstCase",
+    "bestCase",
+    "expectedCloseDate",
+    "opportunityStatus",
+    "partner",
+    "user",
+    "source",
+    "createdOn",
+];
+
 export const SALE_ANALYSIS_FIELDS = [
     "id",
     "orderDate",
@@ -236,6 +253,84 @@ export const INVOICE_FIELDS = [
     "ventilatedDateTime",
     "createdOn",
     "updatedOn",
+];
+
+export const TIMESHEET_FIELDS = [
+    "id",
+    "fullName",
+    "employee",
+    "company",
+    "fromDate",
+    "toDate",
+    "periodTotal",
+    "statusSelect",
+    "isCompleted",
+    "sentDateTime",
+    "validationDateTime",
+    "validatedBy",
+    "refusalDateTime",
+    "refusedBy",
+    "groundForRefusal",
+    "createdOn",
+    "updatedOn",
+];
+
+export const PROJECT_FIELDS = [
+    // Identification
+    "id",
+    "code",
+    "name",
+    "fullName",
+    "description",
+    // Client / responsable
+    "clientPartner",
+    "contactPartner",
+    "assignedTo",
+    "team",
+    "company",
+    // Statut / avancement
+    "projectStatus",
+    "isBusinessProject",
+    "percentageOfProgress",
+    "percentageOfConsumption",
+    // Dates
+    "fromDate",
+    "toDate",
+    // Temps
+    "estimatedTimeHrs",
+    "soldTime",
+    "spentTime",
+    "plannedTime",
+    "budgetedTime",
+    // Financier
+    "currency",
+    "turnover",
+    "realTurnover",
+    "totalEstimatedCosts",
+    "totalRealCosts",
+    "totalInvoiced",
+    // Divers
+    "archived",
+    "createdOn",
+    "updatedOn",
+];
+
+export const PROJECT_ANALYSIS_FIELDS = [
+    "id",
+    "name",
+    "clientPartner",
+    "assignedTo",
+    "projectStatus",
+    "fromDate",
+    "toDate",
+    "soldTime",
+    "spentTime",
+    "plannedTime",
+    "percentageOfProgress",
+    "percentageOfConsumption",
+    "totalInvoiced",
+    "totalRealCosts",
+    "isBusinessProject",
 ];
 
 export const SALE_ORDER_FIELDS = [

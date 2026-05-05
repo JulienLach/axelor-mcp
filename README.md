@@ -121,8 +121,8 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 
 **Partenaires**
 
-- `search_partners` — _"Recherche le client Dupont dans Axelor"_
-- `get_partner` — _"Donne-moi les détails du partenaire Dupont"_
+- `search_partners` — *"Recherche le client Dupont dans Axelor"*
+- `get_partner` — *"Montre-moi toutes les infos sur le partenaire Dupont"*
 
 **Produits**
 
@@ -130,14 +130,14 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 
 **Commandes clients**
 
-- `search_sale_orders` — _"Montre-moi les commandes confirmées non facturées du client Dupont confirmées depuis le 2025-01-01"_ (filtres : client, statut, facturation, livraison, période de confirmation, pagination)
-- `get_sale_order` — _"Détails de la commande BC-2025-0042"_
-- `create_sale_order` — _"Crée un devis pour le client Dupont avec 2 jours de prestation"_
+- `search_sale_orders` — *"Commandes confirmées non facturées du client Dupont depuis janvier 2025"* (filtres : client, statut, facturation, livraison, période de confirmation, pagination)
+- `get_sale_order` — *"Donne-moi le détail complet de la commande SO-00042"*
+- `create_sale_order` — *"Crée un devis pour le client Dupont avec 2 jours de prestation"*
 
 **Factures**
 
-- `search_invoices` — _"Factures impayées du client Dupont"_, _"Factures émises en janvier 2026"_, _"Avoirs clients du trimestre"_ (filtres : client, numéro, statut, type, période, échéance, unpaidOnly)
-- `get_invoice` — _"Détails de la facture FA-2025-0123"_
+- `search_invoices` — *"Factures impayées du client Dupont"*, *"Factures émises en janvier 2026"*, *"Avoirs clients du trimestre"* (filtres : client, numéro, statut, type, période, échéance, unpaidOnly)
+- `get_invoice` — *"Montre-moi le détail de la facture FAC-00123"*
 
 **Analyse des ventes**
 
@@ -146,12 +146,22 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 
 **Opportunités CRM**
 
-- `search_opportunities` — _"Liste mes opportunités ouvertes pour le client Dupont"_
-- `get_opportunity` — _"Détails de l'opportunité Dupont - Projet ERP"_
-- `create_opportunity` — _"Crée une opportunité de 15 000 € pour le prospect Martin avec 60 % de probabilité"_
+- `search_opportunities` — *"Liste mes opportunités ouvertes pour le client Dupont"*
+- `get_opportunity` — *"Détails de l'opportunité Structure métallique Tuyauterie & Caux"*
+- `create_opportunity` — *"Crée une opportunité de 15 000 € pour le prospect Martin avec 60 % de probabilité"*
 
 **Pistes CRM**
 
-- `search_leads` — _"Montre-moi les pistes chaudes non converties assignées à Julien"_
-- `get_lead` — _"Détails de la piste Jean Dupont"_
-- `create_lead` — _"Crée une piste pour Jean Dupont de la société ABC, email jean@abc.fr"_
+- `search_leads` — *"Montre-moi les pistes chaudes non converties assignées à Julien"*
+- `get_lead` — *"Détails de la piste Jean Dupont chez ABC"*
+- `create_lead` — *"Crée une piste pour Jean Dupont de la société ABC, email jean@abc.fr"*
+
+**Projets**
+
+- `search_projects` — *"Liste les projets ouverts du client Dupont"*, *"Projets en retard assignés à Marie"* (filtres : client, responsable, statut, isOverdue, isBusinessProject, pagination)
+- `analyze_projects` — *"Consommé vs vendu par client sur tous les projets ouverts"*, *"Charge par responsable avec projets en retard"*, *"Répartition par statut des projets commerciaux"* (groupBy : client / assignedTo / status ; filtres : client, responsable, retard, projets commerciaux)
+
+**Feuilles de temps**
+
+- `search_timesheets` — *"Feuilles de temps en attente de validation"*, *"Feuilles de temps de Dupont sur janvier 2026"* (filtres : employé, statut, période)
+- `get_timesheet` — *"Montre-moi le détail de la feuille de temps de Dupont avec toutes ses lignes"*
