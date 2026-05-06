@@ -165,3 +165,4 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 
 - `search_timesheets` — *"Feuilles de temps en attente de validation"*, *"Feuilles de temps de Dupont sur janvier 2026"* (filtres : employé, statut, période)
 - `get_timesheet` — *"Montre-moi le détail de la feuille de temps de Dupont avec toutes ses lignes"*
+- `summary_timesheet_by_project` — *"Temps passé sur mes projets cette semaine"*, *"Heures imputées par employé en mars 2026"*, *"Récap du temps passé par projet sur le projet X en février"* (groupBy : project / employee ; filtres : période obligatoire, employé, projet)

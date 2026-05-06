@@ -10,6 +10,7 @@ export const CLASSES = {
     invoice: "com.axelor.apps.account.db.Invoice",
     project: "com.axelor.apps.project.db.Project",
     timesheet: "com.axelor.apps.hr.db.Timesheet",
+    timesheetLine: "com.axelor.apps.hr.db.TimesheetLine",
 } as const;
 
 // ── Champs par modèle ─────────────────────────────────────────────────────────
@@ -273,6 +274,19 @@ export const TIMESHEET_FIELDS = [
     "groundForRefusal",
     "createdOn",
     "updatedOn",
+];
+
+export const TIMESHEET_LINE_FIELDS = [
+    "id",
+    "date",
+    "hoursDuration",
+    "comments",
+    "timesheet",
+    "timesheet.employee",
+    "timesheet.statusSelect",
+    "project",
+    "projectTask",
+    "createdOn",
 ];
 
 export const PROJECT_FIELDS = [

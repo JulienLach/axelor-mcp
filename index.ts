@@ -15,6 +15,7 @@ import {
     SALE_ORDER_FIELDS,
     SALE_ORDER_LINE_FIELDS,
     TIMESHEET_FIELDS,
+    TIMESHEET_LINE_FIELDS,
 } from "./fields.ts";
 
 const BASE_URL = process.env.AXELOR_BASE_URL;
@@ -1432,6 +1433,159 @@ server.registerTool(
     async ({ id }) => {
         const ts = await axelorGetById(CLASSES.timesheet, id);
         return text(ts ? JSON.stringify(ts, null, 2) : `Feuille de temps ID ${id} introuvable.`);
+    },
+);
+
+// ── Résumé temps passé par projet / employé (TimesheetLine) ──────────────────
+
+type TimesheetLineData = {
+    id: number;
+    date: string | null;
+    hoursDuration: number | string | null;
+    comments?: string;
+    timesheet?: {
+        id: number;
+        employee?: { id: number; name: string } | null;
+        statusSelect?: number;
+    };
+    project?: { id: number; name: string } | null;
+    projectTask?: { id: number; name: string } | null;
+};
+
+type TimeGroup = {
+    key: string;
+    totalHours: number;
+    lineCount: number;
+    taskBreakdown: Record<string, number>;
+};
+
+function groupTimesheetLines(
+    lines: TimesheetLineData[],
+    groupBy: "project" | "employee",
+): TimeGroup[] {
+    const map = new Map<string, TimeGroup>();
+
+    for (const line of lines) {
+        const hours = Number(line.hoursDuration) || 0;
+        const taskName = line.projectTask?.name ?? "Sans tâche";
+
+        let key: string;
+        if (groupBy === "employee") {
+            key = line.timesheet?.employee?.name ?? "Non assigné";
+        } else {
+            key = line.project?.name ?? "Sans projet";
+        }
+
+        const g = map.get(key) ?? { key, totalHours: 0, lineCount: 0, taskBreakdown: {} };
+        g.totalHours += hours;
+        g.lineCount++;
+        g.taskBreakdown[taskName] = (g.taskBreakdown[taskName] ?? 0) + hours;
+        map.set(key, g);
+    }
+
+    return [...map.values()].sort((a, b) => b.totalHours - a.totalHours);
+}
+
+server.registerTool(
+    "summary_timesheet_by_project",
+    {
+        description:
+            "Résumé du temps passé agrégé par projet ou employé. Groupable par projet (défaut) ou employee. Filtres : période obligatoire, employé, projet.",
+        inputSchema: {
+            dateFrom: z.string().describe("Date de début (YYYY-MM-DD)"),
+            dateTo: z.string().describe("Date de fin (YYYY-MM-DD)"),
+            groupBy: z
+                .enum(["project", "employee"])
+                .optional()
+                .describe("Axe d'agrégation : project (défaut) ou employee"),
+            employeeName: z.string().optional().describe("Filtrer par employé (nom partiel)"),
+            projectName: z.string().optional().describe("Filtrer par projet (nom partiel)"),
+            topN: z.number().optional().describe("Nombre de groupes à afficher (défaut : 20)"),
+        },
+    },
+    async ({ dateFrom, dateTo, groupBy = "project", employeeName, projectName, topN = 20 }) => {
+        const criteria: Criterion[] = [
+            { fieldName: "date", operator: ">=", value: dateFrom },
+            { fieldName: "date", operator: "<=", value: dateTo },
+        ];
+
+        if (employeeName)
+            criteria.push({ fieldName: "timesheet.employee.name", operator: "like", value: `%${employeeName}%` });
+        if (projectName)
+            criteria.push({ fieldName: "project.name", operator: "like", value: `%${projectName}%` });
+
+        const { data, total } = await axelorSearch(
+            CLASSES.timesheetLine,
+            TIMESHEET_LINE_FIELDS,
+            criteria,
+            { limit: 2000, sortBy: ["date"] },
+        );
+
+        const lines = data as TimesheetLineData[];
+        const allGroups = groupTimesheetLines(lines, groupBy);
+        const displayed = allGroups.slice(0, topN);
+
+        const fmtH = (h: number) => `${h.toFixed(1)} h`;
+
+        const output: string[] = [
+            `Résumé temps passé — groupBy: ${groupBy} | Période: ${dateFrom} → ${dateTo}`,
+            `${lines.length} ligne(s) analysée(s) sur ${total} au total`,
+            "",
+        ];
+
+        if (groupBy === "project") {
+            output.push(
+                `Rang | ${"Projet".padEnd(28)} | ${"Heures".padStart(8)} | Lignes | ${"Tâches principales".padEnd(40)}`,
+                `-----|${"-".repeat(30)}|${"-".repeat(10)}|--------|${"-".repeat(42)}`,
+            );
+            displayed.forEach((g, i) => {
+                const topTasks = Object.entries(g.taskBreakdown)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 3)
+                    .map(([t, h]) => `${t} (${fmtH(h)})`)
+                    .join(", ");
+                output.push(
+                    `${String(i + 1).padStart(4)} | ${g.key.padEnd(28)} | ${fmtH(g.totalHours).padStart(8)} | ${String(g.lineCount).padStart(6)} | ${topTasks}`,
+                );
+            });
+        } else {
+            output.push(
+                `Rang | ${"Employé".padEnd(28)} | ${"Heures".padStart(8)} | Lignes | ${"Projets concernés".padEnd(40)}`,
+                `-----|${"-".repeat(30)}|${"-".repeat(10)}|--------|${"-".repeat(42)}`,
+            );
+            displayed.forEach((g, i) => {
+                const topProjects = Object.entries(g.taskBreakdown)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 3)
+                    .map(([p, h]) => `${p} (${fmtH(h)})`)
+                    .join(", ");
+                output.push(
+                    `${String(i + 1).padStart(4)} | ${g.key.padEnd(28)} | ${fmtH(g.totalHours).padStart(8)} | ${String(g.lineCount).padStart(6)} | ${topProjects}`,
+                );
+            });
+        }
+
+        const tot = allGroups.reduce(
+            (acc, g) => ({
+                totalHours: acc.totalHours + g.totalHours,
+                lineCount: acc.lineCount + g.lineCount,
+            }),
+            { totalHours: 0, lineCount: 0 },
+        );
+
+        output.push(
+            `-----|${"-".repeat(30)}|${"-".repeat(10)}|--------|${"-".repeat(42)}`,
+            `TOTAL| ${"—".padEnd(28)} | ${fmtH(tot.totalHours).padStart(8)} | ${String(tot.lineCount).padStart(6)} |`,
+        );
+
+        if (lines.length < total) {
+            output.push(
+                "",
+                `⚠ Seules ${lines.length} lignes sur ${total} ont été analysées (limite 2000) — affiner la période.`,
+            );
+        }
+
+        return text(output.join("\n"));
     },
 );
 
