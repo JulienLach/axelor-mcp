@@ -4,9 +4,9 @@ Ce projet permet à Claude d'interroger directement votre instance Axelor : rech
 
 ## Aperçu
 
-![Serveur MCP Axelor dans Claude Desktop](docs/axelor-mcp-claude-desktop.png)
+![Serveur MCP Axelor dans Claude Desktop](assets/axelor-mcp-claude-desktop.png)
 
-![Exemple de création de piste CRM via Claude](docs/axelor-mcp-claude-desktop-2.png)
+![Exemple de création de piste CRM via Claude](assets/axelor-mcp-claude-desktop-2.png)
 
 ## Table des matières
 
