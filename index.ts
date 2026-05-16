@@ -18,6 +18,8 @@ import {
     SALE_ORDER_LINE_FIELDS,
     TIMESHEET_FIELDS,
     TIMESHEET_LINE_FIELDS,
+    TRACEBACK_FIELDS,
+    TRACEBACK_DETAIL_FIELDS,
 } from "./fields.ts";
 
 const BASE_URL = process.env.AXELOR_BASE_URL;
@@ -1920,6 +1922,292 @@ server.registerTool(
 
         const result = await axelorCreate(CLASSES.jobPosition, data);
         return text(result ? JSON.stringify(result, null, 2) : "Échec de la création du poste.");
+    },
+);
+
+// ── TraceBack (debug) ─────────────────────────────────────────────────────────
+
+server.registerTool(
+    "search_tracebacks",
+    {
+        description:
+            "Rechercher des anomalies / erreurs (TraceBack) dans Axelor. Filtres : période, catégorie, origine, utilisateur, archivé. Ne retourne pas la stack trace complète — utiliser get_traceback pour le détail.",
+        inputSchema: {
+            dateFrom: z.string().optional().describe("Date minimale (YYYY-MM-DD)"),
+            dateTo: z.string().optional().describe("Date maximale (YYYY-MM-DD)"),
+            category: z
+                .enum(["non_bloquant", "bloquant", "fonctionnel"])
+                .optional()
+                .describe("Catégorie : non_bloquant=1, bloquant=2, fonctionnel=3"),
+            origin: z.string().optional().describe("Origine (partielle) de l'erreur"),
+            exception: z.string().optional().describe("Nom de l'exception (partiel)"),
+            userName: z.string().optional().describe("Nom (partiel) de l'utilisateur concerné"),
+            includeArchived: z.boolean().optional().describe("Inclure les anomalies archivées (défaut : false)"),
+            limit: z.number().optional().describe("Nombre de résultats (défaut : 20)"),
+            offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
+        },
+    },
+    async ({ dateFrom, dateTo, category, origin, exception, userName, includeArchived = false, limit = 20, offset = 0 }) => {
+        const categoryMap = { non_bloquant: 1, bloquant: 2, fonctionnel: 3 };
+        const criteria: Criterion[] = [];
+
+        if (!includeArchived) criteria.push({ fieldName: "archived", operator: "=", value: false });
+        if (dateFrom) criteria.push({ fieldName: "date", operator: ">=", value: `${dateFrom}T00:00:00Z` });
+        if (dateTo) criteria.push({ fieldName: "date", operator: "<=", value: `${dateTo}T23:59:59Z` });
+        if (category) criteria.push({ fieldName: "categorySelect", operator: "=", value: categoryMap[category] });
+        if (origin) criteria.push({ fieldName: "origin", operator: "like", value: `%${origin}%` });
+        if (exception) criteria.push({ fieldName: "exception", operator: "like", value: `%${exception}%` });
+        if (userName) criteria.push({ fieldName: "internalUser.name", operator: "like", value: `%${userName}%` });
+
+        const { data, total } = await axelorSearch(CLASSES.traceBack, TRACEBACK_FIELDS, criteria, {
+            limit,
+            offset,
+            sortBy: ["-date"],
+        });
+
+        if (data.length === 0) return text("Aucune anomalie trouvée.");
+
+        const categoryLabel: Record<number, string> = { 1: "Non bloquant", 2: "Bloquant", 3: "Fonctionnel" };
+        const rows = (data as Record<string, unknown>[]).map((t) => {
+            const cat = typeof t.categorySelect === "number" ? (categoryLabel[t.categorySelect] ?? `#${t.categorySelect}`) : "?";
+            const user = (t.internalUser as Record<string, unknown> | null)?.name ?? "—";
+            const date = typeof t.date === "string" ? t.date.slice(0, 10) : "—";
+            return `[${t.id}] ${date} | ${cat} | ${t.origin ?? "—"} | ${t.exception ?? "—"} | ${t.message ?? t.error ?? "—"} | user: ${user}`;
+        });
+
+        return text(
+            `${data.length} anomalie(s) sur ${total} au total (triées par date desc) :\n\n` +
+                rows.join("\n") +
+                "\n\nUtiliser get_traceback avec l'ID pour voir la stack trace complète.",
+        );
+    },
+);
+
+// Packages framework à filtrer lors de l'analyse de stack trace
+const FRAMEWORK_PREFIXES = [
+    "java.", "javax.", "sun.", "com.sun.", "jdk.",
+    "org.springframework.", "org.hibernate.", "org.jboss.",
+    "io.netty.", "org.apache.", "ch.qos.", "org.slf4j.",
+    "com.google.", "org.reflections.", "org.codehaus.",
+    "com.zaxxer.", "org.postgresql.", "org.mariadb.",
+];
+
+function isAppFrame(frame: string): boolean {
+    return FRAMEWORK_PREFIXES.every((prefix) => !frame.includes(`at ${prefix}`));
+}
+
+function parseStackTrace(trace: string): {
+    exceptionChain: { type: string; message: string }[];
+    appFrames: string[];
+    firstAppFrame: string | null;
+    allFrames: string[];
+} {
+    const lines = trace.split("\n").map((l) => l.trim()).filter(Boolean);
+    const exceptionChain: { type: string; message: string }[] = [];
+    const appFrames: string[] = [];
+    const allFrames: string[] = [];
+
+    for (const line of lines) {
+        if (line.startsWith("at ")) {
+            allFrames.push(line);
+            if (isAppFrame(line)) appFrames.push(line);
+        } else if (line.startsWith("Caused by:") || (!line.startsWith("...") && !line.startsWith("at "))) {
+            const raw = line.replace(/^Caused by:\s*/, "");
+            const colonIdx = raw.indexOf(":");
+            if (colonIdx !== -1) {
+                exceptionChain.push({ type: raw.slice(0, colonIdx).trim(), message: raw.slice(colonIdx + 1).trim() });
+            } else {
+                exceptionChain.push({ type: raw.trim(), message: "" });
+            }
+        }
+    }
+
+    return {
+        exceptionChain,
+        appFrames,
+        firstAppFrame: appFrames[0] ?? null,
+        allFrames,
+    };
+}
+
+server.registerTool(
+    "get_traceback",
+    {
+        description:
+            "Analyse technique complète d'une anomalie Axelor : chaîne d'exceptions, frames applicatifs isolés (sans le bruit framework), premier point d'entrée probable du bug, stack trace complète.",
+        inputSchema: {
+            id: z.number().describe("ID de l'anomalie (retourné par search_tracebacks)"),
+            showFullTrace: z
+                .boolean()
+                .optional()
+                .describe("Inclure la stack trace brute complète en plus de l'analyse (défaut : false)"),
+        },
+    },
+    async ({ id, showFullTrace = false }) => {
+        const item = (await axelorGetById(CLASSES.traceBack, id)) as Record<string, unknown> | null;
+        if (!item) return text(`Aucune anomalie trouvée pour l'ID ${id}.`);
+
+        const categoryLabel: Record<number, string> = { 1: "Non bloquant", 2: "Bloquant", 3: "Fonctionnel" };
+        const cat = typeof item.categorySelect === "number" ? (categoryLabel[item.categorySelect] ?? `#${item.categorySelect}`) : "?";
+        const user = (item.internalUser as Record<string, unknown> | null)?.name ?? "—";
+
+        const lines: string[] = [
+            `══ TraceBack #${item.id} ═══════════════════════════════════════`,
+            `Date       : ${item.date ?? "—"}`,
+            `Catégorie  : ${cat}`,
+            `Origine    : ${item.origin ?? "—"}`,
+            `Référence  : ${item.ref ?? "—"} (refId: ${item.refId ?? "—"})`,
+            `Utilisateur: ${user}`,
+            ``,
+            `── Contexte ─────────────────────────────────────────────────────`,
+            `Exception  : ${item.exception ?? "—"}`,
+            `Message    : ${item.message ?? "—"}`,
+            `Erreur     : ${item.error ?? "—"}`,
+            `Cause      : ${item.cause ?? "—"}`,
+        ];
+
+        const rawTrace = item.trace ? String(item.trace) : null;
+
+        if (rawTrace) {
+            const { exceptionChain, appFrames, firstAppFrame, allFrames } = parseStackTrace(rawTrace);
+
+            lines.push(``, `── Analyse technique ────────────────────────────────────────────`);
+
+            if (exceptionChain.length > 0) {
+                lines.push(`Chaîne d'exceptions (${exceptionChain.length}) :`);
+                exceptionChain.forEach((ex, i) => {
+                    const indent = i === 0 ? "  └─ [racine]" : `  └─ [cause ${i}]`;
+                    lines.push(`${indent} ${ex.type}`);
+                    if (ex.message) lines.push(`           msg: ${ex.message.slice(0, 200)}`);
+                });
+            }
+
+            lines.push(``);
+            if (firstAppFrame) {
+                lines.push(`Point d'entrée probable du bug :`);
+                lines.push(`  >>> ${firstAppFrame}`);
+            } else {
+                lines.push(`Point d'entrée : aucun frame applicatif identifié (erreur purement framework ?)`);
+            }
+
+            lines.push(``);
+            lines.push(`Frames applicatifs (hors framework — ${appFrames.length}/${allFrames.length} total) :`);
+            if (appFrames.length === 0) {
+                lines.push(`  (aucun — tous les frames sont des librairies tierces)`);
+            } else {
+                appFrames.slice(0, 15).forEach((f) => lines.push(`  ${f}`));
+                if (appFrames.length > 15) lines.push(`  ... (${appFrames.length - 15} frames app supplémentaires)`);
+            }
+
+            if (showFullTrace) {
+                lines.push(``, `── Stack trace brute complète ───────────────────────────────────`);
+                lines.push(rawTrace);
+            }
+        } else {
+            lines.push(``, `(aucune stack trace disponible)`);
+        }
+
+        return text(lines.join("\n"));
+    },
+);
+
+server.registerTool(
+    "analyze_tracebacks",
+    {
+        description:
+            "Analyse agrégée des anomalies Axelor : top exceptions par fréquence, répartition par origine/module, tendance par jour. Utile pour identifier les erreurs récurrentes et les régressions.",
+        inputSchema: {
+            dateFrom: z.string().optional().describe("Date minimale (YYYY-MM-DD)"),
+            dateTo: z.string().optional().describe("Date maximale (YYYY-MM-DD)"),
+            category: z
+                .enum(["non_bloquant", "bloquant", "fonctionnel"])
+                .optional()
+                .describe("Catégorie : non_bloquant=1, bloquant=2, fonctionnel=3"),
+            origin: z.string().optional().describe("Filtrer sur une origine (partielle)"),
+            topN: z.number().optional().describe("Nombre d'entrées dans chaque top (défaut : 10)"),
+        },
+    },
+    async ({ dateFrom, dateTo, category, origin, topN = 10 }) => {
+        const categoryMap = { non_bloquant: 1, bloquant: 2, fonctionnel: 3 };
+        const criteria: Criterion[] = [{ fieldName: "archived", operator: "=", value: false }];
+
+        if (dateFrom) criteria.push({ fieldName: "date", operator: ">=", value: `${dateFrom}T00:00:00Z` });
+        if (dateTo) criteria.push({ fieldName: "date", operator: "<=", value: `${dateTo}T23:59:59Z` });
+        if (category) criteria.push({ fieldName: "categorySelect", operator: "=", value: categoryMap[category] });
+        if (origin) criteria.push({ fieldName: "origin", operator: "like", value: `%${origin}%` });
+
+        const { data, total } = await axelorSearch(CLASSES.traceBack, TRACEBACK_FIELDS, criteria, {
+            limit: 500,
+            sortBy: ["-date"],
+        });
+
+        if (data.length === 0) return text("Aucune anomalie trouvée sur la période.");
+
+        const items = data as Record<string, unknown>[];
+
+        // Groupement par type d'exception (nom court)
+        const byException: Record<string, { count: number; lastDate: string; sample: string }> = {};
+        const byOrigin: Record<string, number> = {};
+        const byDay: Record<string, { total: number; bloquant: number }> = {};
+        const categoryLabel: Record<number, string> = { 1: "Non bloquant", 2: "Bloquant", 3: "Fonctionnel" };
+
+        for (const item of items) {
+            // Exception : garder le nom court (dernière partie du FQN)
+            const fqn = typeof item.exception === "string" ? item.exception : "Inconnu";
+            const shortName = fqn.includes(".") ? fqn.split(".").pop()! : fqn;
+            const dateStr = typeof item.date === "string" ? item.date.slice(0, 10) : "inconnu";
+            const msg = typeof item.message === "string" ? item.message : (typeof item.error === "string" ? item.error : "");
+
+            if (!byException[shortName]) byException[shortName] = { count: 0, lastDate: dateStr, sample: msg.slice(0, 120) };
+            byException[shortName].count++;
+            if (dateStr > byException[shortName].lastDate) byException[shortName].lastDate = dateStr;
+
+            // Origine
+            const orig = typeof item.origin === "string" && item.origin ? item.origin : "(non renseigné)";
+            byOrigin[orig] = (byOrigin[orig] ?? 0) + 1;
+
+            // Tendance par jour
+            if (!byDay[dateStr]) byDay[dateStr] = { total: 0, bloquant: 0 };
+            byDay[dateStr].total++;
+            if (item.categorySelect === 2) byDay[dateStr].bloquant++;
+        }
+
+        const topExceptions = Object.entries(byException)
+            .sort((a, b) => b[1].count - a[1].count)
+            .slice(0, topN);
+
+        const topOrigins = Object.entries(byOrigin)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, topN);
+
+        const sortedDays = Object.entries(byDay).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 14);
+
+        const lines: string[] = [
+            `══ Analyse anomalies ═══════════════════════════════════════════`,
+            `Période   : ${dateFrom ?? "—"} → ${dateTo ?? "aujourd'hui"}`,
+            `Total     : ${data.length} anomalie(s) analysée(s) sur ${total} (max 500 chargées)`,
+            ``,
+            `── Top ${topN} exceptions par fréquence ──────────────────────────────`,
+        ];
+
+        topExceptions.forEach(([name, stats], i) => {
+            lines.push(`  ${String(i + 1).padStart(2)}. ${name.padEnd(50)} ×${stats.count}  (dernière: ${stats.lastDate})`);
+            if (stats.sample) lines.push(`      ex: ${stats.sample}`);
+        });
+
+        lines.push(``, `── Top ${topN} origines / modules touchés ────────────────────────────`);
+        topOrigins.forEach(([orig, count], i) => {
+            lines.push(`  ${String(i + 1).padStart(2)}. ${orig.padEnd(55)} ×${count}`);
+        });
+
+        lines.push(``, `── Tendance par jour (14 derniers jours) ─────────────────────────`);
+        sortedDays.forEach(([day, stats]) => {
+            const bar = "█".repeat(Math.min(stats.total, 30));
+            const bloquantNote = stats.bloquant > 0 ? `  ⚠ ${stats.bloquant} bloquant(s)` : "";
+            lines.push(`  ${day} │ ${bar} ${stats.total}${bloquantNote}`);
+        });
+
+        return text(lines.join("\n"));
     },
 );
 

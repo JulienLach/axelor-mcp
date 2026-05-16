@@ -13,6 +13,7 @@ export const CLASSES = {
     timesheetLine: "com.axelor.apps.hr.db.TimesheetLine",
     jobPosition: "com.axelor.apps.hr.db.JobPosition",
     projectTask: "com.axelor.apps.project.db.ProjectTask",
+    traceBack: "com.axelor.apps.base.db.TraceBack",
 } as const;
 
 // ── Champs par modèle ─────────────────────────────────────────────────────────
@@ -391,6 +392,50 @@ export const JOB_POSITION_FIELDS = [
     "archived",
     "createdOn",
     "updatedOn",
+];
+
+export const TRACEBACK_FIELDS = [
+    "id",
+    "date",
+    "name",
+    "exception",
+    "message",
+    "error",
+    "cause",
+    "origin",
+    "ref",
+    "refId",
+    "categorySelect",
+    "typeSelect",
+    "batchId",
+    "internalUser",
+    "createdBy",
+    "createdOn",
+    "updatedOn",
+    "archived",
+];
+
+export const TRACEBACK_DETAIL_FIELDS = [
+    "id",
+    "date",
+    "name",
+    "exception",
+    "message",
+    "error",
+    "cause",
+    "origin",
+    "ref",
+    "refId",
+    "categorySelect",
+    "typeSelect",
+    "batchId",
+    "trace",
+    "internalUser",
+    "createdBy",
+    "updatedBy",
+    "createdOn",
+    "updatedOn",
+    "archived",
 ];
 
 export const SALE_ORDER_FIELDS = [
