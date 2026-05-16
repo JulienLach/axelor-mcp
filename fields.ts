@@ -11,6 +11,8 @@ export const CLASSES = {
     project: "com.axelor.apps.project.db.Project",
     timesheet: "com.axelor.apps.hr.db.Timesheet",
     timesheetLine: "com.axelor.apps.hr.db.TimesheetLine",
+    jobPosition: "com.axelor.apps.hr.db.JobPosition",
+    projectTask: "com.axelor.apps.project.db.ProjectTask",
 } as const;
 
 // ── Champs par modèle ─────────────────────────────────────────────────────────
@@ -345,6 +347,50 @@ export const PROJECT_ANALYSIS_FIELDS = [
     "totalInvoiced",
     "totalRealCosts",
     "isBusinessProject",
+];
+
+export const PROJECT_TASK_FIELDS = [
+    "id",
+    "name",
+    "project",
+    "taskStatus",
+    "assignedTo",
+    "priority",
+    "parentTask",
+    "taskDate",
+    "taskDeadline",
+    "progressSelect",
+    "estimatedTime",
+    "plannedTime",
+    "spentTime",
+    "description",
+    "createdOn",
+    "updatedOn",
+];
+
+export const JOB_POSITION_FIELDS = [
+    "id",
+    "jobTitle",
+    "jobReference",
+    "location",
+    "company",
+    "companyDepartment",
+    "employee",
+    "contractType",
+    "statusSelect",
+    "positionStatusSelect",
+    "experienceSelect",
+    "salary",
+    "nbOpenJob",
+    "nbPeopleHired",
+    "publicationDate",
+    "startingDate",
+    "jobDescription",
+    "profileWanted",
+    "mailAccount",
+    "archived",
+    "createdOn",
+    "updatedOn",
 ];
 
 export const SALE_ORDER_FIELDS = [

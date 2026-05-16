@@ -4,7 +4,9 @@ import { z } from "zod";
 import {
     CLASSES,
     INVOICE_FIELDS,
+    JOB_POSITION_FIELDS,
     LEAD_FIELDS,
+    PROJECT_TASK_FIELDS,
     OPPORTUNITY_ANALYSIS_FIELDS,
     OPPORTUNITY_FIELDS,
     PARTNER_FIELDS,
@@ -1038,8 +1040,7 @@ function groupOpportunities(
 
     for (const o of opps) {
         let key: string;
-        if (groupBy === "month")
-            key = o.expectedCloseDate ? o.expectedCloseDate.slice(0, 7) : "sans date";
+        if (groupBy === "month") key = o.expectedCloseDate ? o.expectedCloseDate.slice(0, 7) : "sans date";
         else if (groupBy === "salesperson") key = o.user?.name ?? "non assigné";
         else if (groupBy === "source") key = o.source?.name ?? "sans source";
         else key = o.opportunityStatus?.name ?? "sans statut";
@@ -1167,10 +1168,7 @@ server.registerTool(
         inputSchema: {
             clientName: z.string().optional().describe("Nom (partiel) du client (clientPartner)"),
             assignedToName: z.string().optional().describe("Nom (partiel) du responsable (assignedTo)"),
-            projectStatusName: z
-                .string()
-                .optional()
-                .describe("Nom (partiel) du statut projet (ex: En cours, Terminé)"),
+            projectStatusName: z.string().optional().describe("Nom (partiel) du statut projet (ex: En cours, Terminé)"),
             isOverdue: z
                 .boolean()
                 .optional()
@@ -1184,12 +1182,20 @@ server.registerTool(
             offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
         },
     },
-    async ({ clientName, assignedToName, projectStatusName, isOverdue, isBusinessProject, archived, limit, offset }) => {
+    async ({
+        clientName,
+        assignedToName,
+        projectStatusName,
+        isOverdue,
+        isBusinessProject,
+        archived,
+        limit,
+        offset,
+    }) => {
         const today = new Date().toISOString().split("T")[0];
         const criteria: Criterion[] = [];
 
-        if (clientName)
-            criteria.push({ fieldName: "clientPartner.name", operator: "like", value: `%${clientName}%` });
+        if (clientName) criteria.push({ fieldName: "clientPartner.name", operator: "like", value: `%${clientName}%` });
         if (assignedToName)
             criteria.push({ fieldName: "assignedTo.name", operator: "like", value: `%${assignedToName}%` });
         if (projectStatusName)
@@ -1305,12 +1311,19 @@ server.registerTool(
             topN: z.number().optional().describe("Nombre de groupes à afficher (défaut : 20)"),
         },
     },
-    async ({ groupBy, clientName, assignedToName, isOverdue, isBusinessProject, includeArchived = false, topN = 20 }) => {
+    async ({
+        groupBy,
+        clientName,
+        assignedToName,
+        isOverdue,
+        isBusinessProject,
+        includeArchived = false,
+        topN = 20,
+    }) => {
         const today = new Date().toISOString().split("T")[0];
         const criteria: Criterion[] = [];
 
-        if (clientName)
-            criteria.push({ fieldName: "clientPartner.name", operator: "like", value: `%${clientName}%` });
+        if (clientName) criteria.push({ fieldName: "clientPartner.name", operator: "like", value: `%${clientName}%` });
         if (assignedToName)
             criteria.push({ fieldName: "assignedTo.name", operator: "like", value: `%${assignedToName}%` });
         if (isOverdue) criteria.push({ fieldName: "toDate", operator: "<", value: today });
@@ -1353,7 +1366,15 @@ server.registerTool(
                 totalInvoiced: acc.totalInvoiced + g.totalInvoiced,
                 totalRealCosts: acc.totalRealCosts + g.totalRealCosts,
             }),
-            { count: 0, overdueCount: 0, soldTime: 0, spentTime: 0, plannedTime: 0, totalInvoiced: 0, totalRealCosts: 0 },
+            {
+                count: 0,
+                overdueCount: 0,
+                soldTime: 0,
+                spentTime: 0,
+                plannedTime: 0,
+                totalInvoiced: 0,
+                totalRealCosts: 0,
+            },
         );
 
         lines.push(
@@ -1395,8 +1416,14 @@ server.registerTool(
                 .enum(["draft", "waiting", "validated", "refused"])
                 .optional()
                 .describe("Statut : draft=1, waiting=2, validated=3, refused=4"),
-            dateFrom: z.string().optional().describe("Période minimale de début de feuille (YYYY-MM-DD) — filtre sur fromDate"),
-            dateTo: z.string().optional().describe("Période maximale de fin de feuille (YYYY-MM-DD) — filtre sur toDate"),
+            dateFrom: z
+                .string()
+                .optional()
+                .describe("Période minimale de début de feuille (YYYY-MM-DD) — filtre sur fromDate"),
+            dateTo: z
+                .string()
+                .optional()
+                .describe("Période maximale de fin de feuille (YYYY-MM-DD) — filtre sur toDate"),
             limit: z.number().optional().describe("Nombre de résultats (défaut : 20)"),
             offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
         },
@@ -1405,10 +1432,8 @@ server.registerTool(
         const statusMap = { draft: 1, waiting: 2, validated: 3, refused: 4 };
         const criteria: Criterion[] = [];
 
-        if (employeeName)
-            criteria.push({ fieldName: "employee.name", operator: "like", value: `%${employeeName}%` });
-        if (statusSelect)
-            criteria.push({ fieldName: "statusSelect", operator: "=", value: statusMap[statusSelect] });
+        if (employeeName) criteria.push({ fieldName: "employee.name", operator: "like", value: `%${employeeName}%` });
+        if (statusSelect) criteria.push({ fieldName: "statusSelect", operator: "=", value: statusMap[statusSelect] });
         if (dateFrom) criteria.push({ fieldName: "fromDate", operator: ">=", value: dateFrom });
         if (dateTo) criteria.push({ fieldName: "toDate", operator: "<=", value: dateTo });
         if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
@@ -1459,10 +1484,7 @@ type TimeGroup = {
     taskBreakdown: Record<string, number>;
 };
 
-function groupTimesheetLines(
-    lines: TimesheetLineData[],
-    groupBy: "project" | "employee",
-): TimeGroup[] {
+function groupTimesheetLines(lines: TimesheetLineData[], groupBy: "project" | "employee"): TimeGroup[] {
     const map = new Map<string, TimeGroup>();
 
     for (const line of lines) {
@@ -1511,15 +1533,12 @@ server.registerTool(
 
         if (employeeName)
             criteria.push({ fieldName: "timesheet.employee.name", operator: "like", value: `%${employeeName}%` });
-        if (projectName)
-            criteria.push({ fieldName: "project.name", operator: "like", value: `%${projectName}%` });
+        if (projectName) criteria.push({ fieldName: "project.name", operator: "like", value: `%${projectName}%` });
 
-        const { data, total } = await axelorSearch(
-            CLASSES.timesheetLine,
-            TIMESHEET_LINE_FIELDS,
-            criteria,
-            { limit: 2000, sortBy: ["date"] },
-        );
+        const { data, total } = await axelorSearch(CLASSES.timesheetLine, TIMESHEET_LINE_FIELDS, criteria, {
+            limit: 2000,
+            sortBy: ["date"],
+        });
 
         const lines = data as TimesheetLineData[];
         const allGroups = groupTimesheetLines(lines, groupBy);
@@ -1586,6 +1605,321 @@ server.registerTool(
         }
 
         return text(output.join("\n"));
+    },
+);
+
+// ── Synthèse des tâches d'une affaire (ProjectTask) ──────────────────────────
+
+type ProjectTask = {
+    id: number;
+    name: string;
+    project?: { id: number; name: string } | null;
+    taskStatus?: { id: number; name: string } | null;
+    assignedTo?: { id: number; name: string } | null;
+    priority?: { id: number; name: string } | null;
+    parentTask?: { id: number; name: string } | null;
+    taskDate?: string | null;
+    taskDeadline?: string | null;
+    progressSelect?: number | null;
+    estimatedTime?: number | string | null;
+    plannedTime?: number | string | null;
+    spentTime?: number | string | null;
+};
+
+server.registerTool(
+    "get_project_tasks_summary",
+    {
+        description:
+            "Synthèse des tâches d'une affaire (projet commercial) : répartition par statut, par responsable, tâches en retard, avancement global, heures estimées vs consommées. Passer projectId ou projectName.",
+        inputSchema: {
+            projectId: z.number().optional().describe("ID de l'affaire (Project)"),
+            projectName: z.string().optional().describe("Nom (partiel) de l'affaire si l'ID n'est pas connu"),
+            excludeCompletedStatuses: z
+                .array(z.string())
+                .optional()
+                .describe(
+                    "Noms exacts des statuts à considérer comme terminés pour les exclure du résumé (ex: ['Terminé', 'Annulé']). Par défaut aucun statut n'est exclu.",
+                ),
+        },
+    },
+    async ({ projectId, projectName, excludeCompletedStatuses = [] }) => {
+        if (!projectId && !projectName) return text("Fournir projectId ou projectName.");
+
+        const criteria: Criterion[] = [];
+        if (projectId) {
+            criteria.push({ fieldName: "project.id", operator: "=", value: projectId });
+        } else {
+            criteria.push({ fieldName: "project.name", operator: "like", value: `%${projectName}%` });
+        }
+
+        const { data, total } = await axelorSearch(CLASSES.projectTask, PROJECT_TASK_FIELDS, criteria, {
+            limit: 500,
+            sortBy: ["taskDeadline"],
+        });
+
+        const tasks = data as ProjectTask[];
+        if (tasks.length === 0) return text("Aucune tâche trouvée pour cette affaire.");
+
+        const today = new Date().toISOString().split("T")[0];
+        const excludedSet = new Set(excludeCompletedStatuses.map((s) => s.toLowerCase()));
+
+        // ── Regroupements ──────────────────────────────────────────────────────
+        const byStatus = new Map<string, ProjectTask[]>();
+        const byAssignee = new Map<string, { tasks: ProjectTask[]; spentTime: number; estimatedTime: number }>();
+        const overdue: ProjectTask[] = [];
+        const unassigned: ProjectTask[] = [];
+
+        let totalEstimated = 0;
+        let totalSpent = 0;
+        let totalProgress = 0;
+        let progressCount = 0;
+
+        for (const t of tasks) {
+            const status = t.taskStatus?.name ?? "Sans statut";
+            const assignee = t.assignedTo?.name ?? null;
+            const est = Number(t.estimatedTime) || 0;
+            const spent = Number(t.spentTime) || 0;
+            const progress = t.progressSelect != null ? Number(t.progressSelect) : null;
+
+            totalEstimated += est;
+            totalSpent += spent;
+            if (progress !== null) {
+                totalProgress += progress;
+                progressCount++;
+            }
+
+            if (!byStatus.has(status)) byStatus.set(status, []);
+            byStatus.get(status)!.push(t);
+
+            if (assignee) {
+                const g = byAssignee.get(assignee) ?? { tasks: [], spentTime: 0, estimatedTime: 0 };
+                g.tasks.push(t);
+                g.spentTime += spent;
+                g.estimatedTime += est;
+                byAssignee.set(assignee, g);
+            } else {
+                unassigned.push(t);
+            }
+
+            if (t.taskDeadline && t.taskDeadline < today && !excludedSet.has(status.toLowerCase())) {
+                overdue.push(t);
+            }
+        }
+
+        const avgProgress = progressCount > 0 ? Math.round(totalProgress / progressCount) : null;
+        const fmtH = (h: number) => `${h.toFixed(1)} h`;
+        const lines: string[] = [];
+
+        // En-tête affaire
+        const projectLabel = tasks[0]?.project?.name ?? projectName ?? `ID ${projectId}`;
+        lines.push(`Synthèse des tâches — Affaire : ${projectLabel}`);
+        lines.push(`${tasks.length} tâche(s) récupérée(s) sur ${total} au total`);
+        if (avgProgress !== null) lines.push(`Avancement moyen : ${avgProgress} %`);
+        lines.push(`Temps estimé total : ${fmtH(totalEstimated)} | Temps consommé : ${fmtH(totalSpent)}`);
+        lines.push("");
+
+        // Répartition par statut
+        lines.push("── Répartition par statut ──────────────────────────────────");
+        const sortedStatuses = [...byStatus.entries()].sort((a, b) => b[1].length - a[1].length);
+        for (const [status, ts] of sortedStatuses) {
+            const isExcluded = excludedSet.has(status.toLowerCase()) ? " ✓" : "";
+            lines.push(`  ${status}${isExcluded} : ${ts.length} tâche(s)`);
+        }
+        lines.push("");
+
+        // Tâches en retard
+        if (overdue.length > 0) {
+            lines.push(`── ⚠ Tâches en retard (deadline dépassée) : ${overdue.length} ──────`);
+            for (const t of overdue) {
+                const who = t.assignedTo?.name ?? "Non assignée";
+                const status = t.taskStatus?.name ?? "?";
+                lines.push(`  • [${status}] ${t.name} — ${who} — échéance : ${t.taskDeadline}`);
+            }
+            lines.push("");
+        }
+
+        // Tâches non assignées
+        if (unassigned.length > 0) {
+            lines.push(`── Tâches sans responsable : ${unassigned.length} ──────────────────`);
+            for (const t of unassigned.slice(0, 10)) {
+                const status = t.taskStatus?.name ?? "?";
+                lines.push(`  • [${status}] ${t.name}`);
+            }
+            if (unassigned.length > 10) lines.push(`  … et ${unassigned.length - 10} autre(s)`);
+            lines.push("");
+        }
+
+        // Charge par responsable
+        lines.push("── Charge par responsable ──────────────────────────────────");
+        const sortedAssignees = [...byAssignee.entries()].sort((a, b) => b[1].tasks.length - a[1].tasks.length);
+        for (const [name, g] of sortedAssignees) {
+            const consoPct =
+                g.estimatedTime > 0 ? ` (${Math.round((g.spentTime / g.estimatedTime) * 100)} % consommé)` : "";
+            lines.push(
+                `  ${name} : ${g.tasks.length} tâche(s) — estimé ${fmtH(g.estimatedTime)} / consommé ${fmtH(g.spentTime)}${consoPct}`,
+            );
+        }
+        if (unassigned.length > 0) lines.push(`  Non assigné : ${unassigned.length} tâche(s)`);
+        lines.push("");
+
+        // Détail des tâches actives (hors statuts terminés)
+        const activeTasks = tasks.filter((t) => !excludedSet.has((t.taskStatus?.name ?? "").toLowerCase()));
+        if (activeTasks.length > 0) {
+            lines.push(`── Détail des tâches actives (${activeTasks.length}) ──────────────────`);
+            lines.push(
+                `${"Statut".padEnd(18)} | ${"Responsable".padEnd(20)} | ${"Avancement".padStart(10)} | ${"Échéance".padEnd(12)} | Intitulé`,
+            );
+            lines.push(`${"-".repeat(18)}-|-${"-".repeat(20)}-|-${"-".repeat(10)}-|-${"-".repeat(12)}-|--------`);
+            for (const t of activeTasks.slice(0, 50)) {
+                const status = (t.taskStatus?.name ?? "?").padEnd(18);
+                const who = (t.assignedTo?.name ?? "—").padEnd(20);
+                const prog =
+                    t.progressSelect != null ? `${t.progressSelect} %`.padStart(10) : "         ?".padStart(10);
+                const deadline = (t.taskDeadline ?? "—").padEnd(12);
+                const overdueMark = t.taskDeadline && t.taskDeadline < today ? " ⚠" : "";
+                lines.push(`${status} | ${who} | ${prog} | ${deadline} | ${t.name}${overdueMark}`);
+            }
+            if (activeTasks.length > 50)
+                lines.push(`… et ${activeTasks.length - 50} autre(s) tâche(s) non affichée(s)`);
+        }
+
+        if (tasks.length < total) {
+            lines.push("", `⚠ Seules ${tasks.length} tâches sur ${total} ont été analysées (limite 500).`);
+        }
+
+        return text(lines.join("\n"));
+    },
+);
+
+// ── Postes RH (JobPosition) ───────────────────────────────────────────────────
+
+/*
+  statusSelect :
+    1 = Brouillon
+    2 = Ouvert
+    3 = En attente
+    4 = Fermé
+    5 = Annulé
+
+  experienceSelect :
+    1 = 0-2 ans
+    2 = 2-5 ans
+    3 = 5-10 ans
+    4 = +10 ans
+*/
+
+server.registerTool(
+    "search_job_positions",
+    {
+        description:
+            "Rechercher des postes à pourvoir (JobPosition) dans Axelor. Filtres : intitulé, statut, société, département, type de contrat, archivé.",
+        inputSchema: {
+            jobTitle: z.string().optional().describe("Intitulé du poste (partiel)"),
+            statusSelect: z
+                .enum(["draft", "open", "waiting", "closed", "cancelled"])
+                .optional()
+                .describe("Statut du poste : draft=1, open=2, waiting=3, closed=4, cancelled=5"),
+            companyName: z.string().optional().describe("Nom (partiel) de la société"),
+            departmentName: z.string().optional().describe("Nom (partiel) du département (companyDepartment)"),
+            contractTypeName: z.string().optional().describe("Nom (partiel) du type de contrat"),
+            archived: z.boolean().optional().describe("Inclure les postes archivés (défaut : false)"),
+            limit: z.number().optional().describe("Nombre de résultats (défaut : 20)"),
+            offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
+        },
+    },
+    async ({ jobTitle, statusSelect, companyName, departmentName, contractTypeName, archived, limit, offset }) => {
+        const statusMap = { draft: 1, open: 2, waiting: 3, closed: 4, cancelled: 5 };
+        const criteria: Criterion[] = [];
+
+        if (jobTitle) criteria.push({ fieldName: "jobTitle", operator: "like", value: `%${jobTitle}%` });
+        if (statusSelect) criteria.push({ fieldName: "statusSelect", operator: "=", value: statusMap[statusSelect] });
+        if (companyName) criteria.push({ fieldName: "company.name", operator: "like", value: `%${companyName}%` });
+        if (departmentName)
+            criteria.push({ fieldName: "companyDepartment.name", operator: "like", value: `%${departmentName}%` });
+        if (contractTypeName)
+            criteria.push({ fieldName: "contractType.name", operator: "like", value: `%${contractTypeName}%` });
+        if (!archived) criteria.push({ fieldName: "archived", operator: "=", value: false });
+        if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
+
+        const { data, total } = await axelorSearch(CLASSES.jobPosition, JOB_POSITION_FIELDS, criteria, {
+            sortBy: ["-publicationDate"],
+            limit: limit ?? 20,
+            offset: offset ?? 0,
+        });
+        return text(formatResult("poste à pourvoir", data, total));
+    },
+);
+
+server.registerTool(
+    "get_job_position",
+    {
+        description: "Obtenir tous les détails d'un poste à pourvoir (JobPosition) Axelor par son ID",
+        inputSchema: {
+            id: z.number().describe("ID du poste (champ 'id' retourné par search_job_positions)"),
+        },
+    },
+    async ({ id }) => {
+        const job = await axelorGetById(CLASSES.jobPosition, id);
+        return text(job ? JSON.stringify(job, null, 2) : `Poste ID ${id} introuvable.`);
+    },
+);
+
+server.registerTool(
+    "create_job_position",
+    {
+        description: "Créer un poste à pourvoir (JobPosition) dans Axelor. Retourne le poste créé avec son ID.",
+        inputSchema: {
+            jobTitle: z.string().describe("Intitulé du poste"),
+            companyId: z.number().optional().describe("ID de la société"),
+            companyDepartmentId: z.number().optional().describe("ID du département (CompanyDepartment)"),
+            employeeId: z.number().optional().describe("ID du responsable du recrutement (Employee)"),
+            contractTypeId: z.number().optional().describe("ID du type de contrat (EmploymentContractType)"),
+            location: z.string().optional().describe("Emplacement / lieu du poste"),
+            nbOpenJob: z.number().optional().describe("Nombre de postes ouverts (défaut : 1)"),
+            salary: z.string().optional().describe("Salaire (texte libre, ex: '35 000 - 40 000 €')"),
+            experienceSelect: z
+                .enum(["0-2", "2-5", "5-10", "+10"])
+                .optional()
+                .describe("Expérience requise : 0-2=1, 2-5=2, 5-10=3, +10=4"),
+            publicationDate: z.string().optional().describe("Date de publication (YYYY-MM-DD)"),
+            startingDate: z.string().optional().describe("Date de prise de poste (YYYY-MM-DD)"),
+            jobDescription: z.string().optional().describe("Description de l'offre"),
+            profileWanted: z.string().optional().describe("Profil recherché"),
+        },
+    },
+    async ({
+        jobTitle,
+        companyId,
+        companyDepartmentId,
+        employeeId,
+        contractTypeId,
+        location,
+        nbOpenJob,
+        salary,
+        experienceSelect,
+        publicationDate,
+        startingDate,
+        jobDescription,
+        profileWanted,
+    }) => {
+        const experienceMap = { "0-2": 1, "2-5": 2, "5-10": 3, "+10": 4 };
+        const data: Record<string, unknown> = { jobTitle };
+
+        if (companyId !== undefined) data.company = { id: companyId };
+        if (companyDepartmentId !== undefined) data.companyDepartment = { id: companyDepartmentId };
+        if (employeeId !== undefined) data.employee = { id: employeeId };
+        if (contractTypeId !== undefined) data.contractType = { id: contractTypeId };
+        if (location !== undefined) data.location = location;
+        if (nbOpenJob !== undefined) data.nbOpenJob = nbOpenJob;
+        if (salary !== undefined) data.salary = salary;
+        if (experienceSelect !== undefined) data.experienceSelect = experienceMap[experienceSelect];
+        if (publicationDate !== undefined) data.publicationDate = publicationDate;
+        if (startingDate !== undefined) data.startingDate = startingDate;
+        if (jobDescription !== undefined) data.jobDescription = jobDescription;
+        if (profileWanted !== undefined) data.profileWanted = profileWanted;
+
+        const result = await axelorCreate(CLASSES.jobPosition, data);
+        return text(result ? JSON.stringify(result, null, 2) : "Échec de la création du poste.");
     },
 );
 

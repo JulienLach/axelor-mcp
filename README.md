@@ -164,9 +164,16 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 
 - `search_projects` — _"Liste les projets ouverts du client Dupont"_, _"Projets en retard assignés à Marie"_ (filtres : client, responsable, statut, isOverdue, isBusinessProject, pagination)
 - `analyze_projects` — _"Consommé vs vendu par client sur tous les projets ouverts"_, _"Charge par responsable avec projets en retard"_, _"Répartition par statut des projets commerciaux"_ (groupBy : client / assignedTo / status ; filtres : client, responsable, retard, projets commerciaux)
+- `get_project_tasks_summary` — _"Donne-moi toutes les affaires en cours pour le client Dupont et le top 3 des affaires les plus importantes"_, _"Quelles tâches sont sans responsable sur ce projet ?"_ (répartition par statut et par responsable, tâches en retard, avancement global, heures estimées vs consommées ; possibilité d'exclure les statuts terminés)
 
 **Feuilles de temps**
 
 - `search_timesheets` — _"Feuilles de temps en attente de validation"_, _"Feuilles de temps de Dupont sur janvier 2026"_ (filtres : employé, statut, période)
 - `get_timesheet` — _"Montre-moi le détail de la feuille de temps de Dupont avec toutes ses lignes"_
 - `summary_timesheet_by_project` — _"Temps passé sur mes projets cette semaine"_, _"Heures imputées par employé en mars 2026"_, _"Récap du temps passé par projet sur le projet X en février"_ (groupBy : project / employee ; filtres : période obligatoire, employé, projet)
+
+**Postes à pourvoir (RH)**
+
+- `search_job_positions` — _"Liste les postes ouverts"_, _"Postes en attente dans le département Commercial"_, _"Offres publiées chez Axelor SAS"_ (filtres : intitulé, statut, société, département, type de contrat, archivé)
+- `get_job_position` — _"Détails complets du poste ID 42"_
+- `create_job_position` — _"Crée un poste de Développeur Java en CDI, expérience 2-5 ans, salaire 45 000 €, à pourvoir le 1er juin"_
