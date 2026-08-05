@@ -10,64 +10,24 @@ Ce projet permet à Claude d'interroger directement votre instance Axelor : rech
 
 ## Table des matières
 
-- [Développeur](#développeur)
 - [Installation Windows](#installation-windows)
 - [Outils disponibles](#outils-disponibles)
 
 ---
 
-## Développeur
-
-### Prérequis
-
-1. **Node.js v24 LTS** → [Télécharger ici](https://nodejs.org/en/download)
-2. **Claude Code** (CLI)
-
-### Installation
-
-```bash
-git clone <url-du-repo> ~/Documents/axelor-mcp
-cd ~/Documents/axelor-mcp
-npm install
-```
-
-Créer un fichier `.env` à la racine :
-
-```env
-AXELOR_BASE_URL=https://votre-instance.axelor.com
-AXELOR_USERNAME=votre_identifiant
-AXELOR_PASSWORD=votre_mot_de_passe
-```
-
-Créer un fichier `.mcp.json` à la racine du projet en adaptant le chemin vers `index.ts` :
-
-```json
-{
-    "mcpServers": {
-        "axelor": {
-            "command": "node",
-            "args": ["--env-file=/chemin/vers/axelor-mcp/.env", "--import=tsx", "/chemin/vers/axelor-mcp/index.ts"]
-        }
-    }
-}
-```
-
-Claude Code détecte ce fichier au démarrage et charge automatiquement le serveur MCP.
-
----
-
 ## Installation Windows
 
-L'installation manuelle et se fait en 4 étapes.
-
-### 1. Installer Node.js
+### 1. Installer Node.js et Git
 
 Télécharger et installer **Node.js v24 LTS** → [nodejs.org](https://nodejs.org/en/download) (choisir « Windows Installer »).
 
-Vérifier l'installation dans un terminal :
+Télécharger et installer **Git** → [git-scm.com](https://git-scm.com/download/win).
+
+Vérifier les installations dans un terminal :
 
 ```bash
 node --version
+git --version
 ```
 
 ### 2. Télécharger le projet
@@ -75,14 +35,15 @@ node --version
 Ouvrir un terminal et cloner le dépôt dans `C:\Users\<NomUtilisateur>\Documents\axelor-mcp` :
 
 ```bash
-git clone <url-du-repo> C:\Users\<NomUtilisateur>\Documents\axelor-mcp
+git clone https://github.com/JulienLach/axelor-mcp C:\Users\<NomUtilisateur>\Documents\axelor-mcp
 cd C:\Users\<NomUtilisateur>\Documents\axelor-mcp
 ```
 
-Dans le terminal, installer les dépendances :
+Dans le terminal, installer les dépendances puis compiler le projet :
 
 ```bash
 npm install
+npm run build
 ```
 
 ### 3. Créer le fichier de configuration
@@ -108,7 +69,7 @@ Y ajouter le bloc suivant en remplaçant `<NomUtilisateur>` par le nom de votre 
             "command": "node",
             "args": [
                 "--env-file=C:/Users/<NomUtilisateur>/Documents/axelor-mcp/.env",
-                "C:/Users/<NomUtilisateur>/Documents/axelor-mcp/index.ts"
+                "C:/Users/<NomUtilisateur>/Documents/axelor-mcp/dist/index.js"
             ]
         }
     }
@@ -121,7 +82,7 @@ Fermer complètement Claude Desktop (clic droit sur l'icône dans la barre des t
 
 ## Outils disponibles
 
-Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va les interpréter. Exemples de ce qu'il peut faire :
+Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va les interpréter. Exemples :
 
 **Partenaires**
 
