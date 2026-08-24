@@ -8,6 +8,7 @@ export const CLASSES = {
     opportunity: "com.axelor.apps.crm.db.Opportunity",
     lead: "com.axelor.apps.crm.db.Lead",
     invoice: "com.axelor.apps.account.db.Invoice",
+    moveLine: "com.axelor.apps.account.db.MoveLine",
     project: "com.axelor.apps.project.db.Project",
     timesheet: "com.axelor.apps.hr.db.Timesheet",
     timesheetLine: "com.axelor.apps.hr.db.TimesheetLine",
@@ -257,6 +258,30 @@ export const INVOICE_FIELDS = [
     "ventilatedDateTime",
     "createdOn",
     "updatedOn",
+];
+
+export const MOVE_LINE_FIELDS = [
+    "id",
+    "name",
+    "date",
+    "dueDate",
+    "debit",
+    "credit",
+    "amountRemaining",
+    "currencyAmount",
+    "origin",
+    "description",
+    "account.code",
+    "account.name",
+    "partner.name",
+    "partner.partnerSeq",
+    "move.reference",
+    "move.statusSelect",
+    "move.journal.code",
+    "move.journal.name",
+    "move.company.name",
+    "reconcileGroup",
+    "createdOn",
 ];
 
 export const TIMESHEET_FIELDS = [

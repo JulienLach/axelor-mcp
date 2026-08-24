@@ -6,6 +6,7 @@ import {
     INVOICE_FIELDS,
     JOB_POSITION_FIELDS,
     LEAD_FIELDS,
+    MOVE_LINE_FIELDS,
     PROJECT_TASK_FIELDS,
     OPPORTUNITY_ANALYSIS_FIELDS,
     OPPORTUNITY_FIELDS,
@@ -99,6 +100,15 @@ function formatResult(label: string, data: unknown[], total: number): string {
 
 function text(content: string) {
     return { content: [{ type: "text" as const, text: content }] };
+}
+
+function confirmPreview(label: string, data: Record<string, unknown>): string {
+    return (
+        `⚠️ Aperçu avant création — rien n'a été créé dans Axelor.\n\n` +
+        `${label} qui serait créé(e) :\n\n${JSON.stringify(data, null, 2)}\n\n` +
+        `Vérifie ces informations avec l'utilisateur. Si elles sont correctes, rappelle ce même outil ` +
+        `avec le paramètre confirm=true pour créer réellement l'enregistrement.`
+    );
 }
 
 // ── Serveur MCP ───────────────────────────────────────────────────────────────
@@ -522,6 +532,12 @@ server.registerTool(
                 )
                 .optional()
                 .describe("Lignes de devis à ajouter"),
+            confirm: z
+                .boolean()
+                .optional()
+                .describe(
+                    "Mettre à true uniquement après validation explicite de l'utilisateur. Sans ce paramètre (ou false), l'outil renvoie un aperçu du devis sans rien créer.",
+                ),
         },
     },
     async ({
@@ -533,6 +549,7 @@ server.registerTool(
         currencyId,
         inAti,
         saleOrderLineList,
+        confirm,
     }) => {
         const body: Record<string, unknown> = { clientPartnerId };
         if (externalReference !== undefined) body.externalReference = externalReference;
@@ -542,6 +559,8 @@ server.registerTool(
         if (currencyId !== undefined) body.currencyId = currencyId;
         if (inAti !== undefined) body.inAti = inAti;
         if (saleOrderLineList !== undefined) body.saleOrderLineList = saleOrderLineList;
+
+        if (!confirm) return text(confirmPreview("Le devis", body));
 
         const res = await axelorFetch("/aos/sale-order", {
             method: "POST",
@@ -639,6 +658,12 @@ server.registerTool(
             description: z.string().optional().describe("Description / notes"),
             webSite: z.string().optional().describe("Site web de l'entreprise"),
             primaryAddress: z.string().optional().describe("Adresse (texte libre)"),
+            confirm: z
+                .boolean()
+                .optional()
+                .describe(
+                    "Mettre à true uniquement après validation explicite de l'utilisateur. Sans ce paramètre (ou false), l'outil renvoie un aperçu de la piste sans rien créer.",
+                ),
         },
     },
     async ({
@@ -654,6 +679,7 @@ server.registerTool(
         description,
         webSite,
         primaryAddress,
+        confirm,
     }) => {
         const scoringMap = { cold: 1, warm: 2, hot: 3 };
         const data: Record<string, unknown> = { name };
@@ -669,6 +695,8 @@ server.registerTool(
         if (description !== undefined) data.description = description;
         if (webSite !== undefined) data.webSite = webSite;
         if (primaryAddress !== undefined) data.primaryAddress = primaryAddress;
+
+        if (!confirm) return text(confirmPreview("La piste (lead)", data));
 
         const result = await axelorCreate(CLASSES.lead, data);
         return text(result ? JSON.stringify(result, null, 2) : "Échec de la création de la piste.");
@@ -746,6 +774,12 @@ server.registerTool(
             currencyId: z.number().optional().describe("ID de la devise"),
             description: z.string().optional().describe("Description interne"),
             customerDescription: z.string().optional().describe("Description client"),
+            confirm: z
+                .boolean()
+                .optional()
+                .describe(
+                    "Mettre à true uniquement après validation explicite de l'utilisateur. Sans ce paramètre (ou false), l'outil renvoie un aperçu de l'opportunité sans rien créer.",
+                ),
         },
     },
     async ({
@@ -762,6 +796,7 @@ server.registerTool(
         currencyId,
         description,
         customerDescription,
+        confirm,
     }) => {
         const data: Record<string, unknown> = {
             name,
@@ -778,6 +813,8 @@ server.registerTool(
         if (currencyId !== undefined) data.currency = { id: currencyId };
         if (description !== undefined) data.description = description;
         if (customerDescription !== undefined) data.customerDescription = customerDescription;
+
+        if (!confirm) return text(confirmPreview("L'opportunité", data));
 
         const result = await axelorCreate(CLASSES.opportunity, data);
         return text(result ? JSON.stringify(result, null, 2) : "Échec de la création de l'opportunité.");
@@ -1004,6 +1041,62 @@ server.registerTool(
     async ({ id }) => {
         const invoice = await axelorGetById(CLASSES.invoice, id);
         return text(invoice ? JSON.stringify(invoice, null, 2) : `Facture ID ${id} introuvable.`);
+    },
+);
+
+// ── Écritures comptables (MoveLine) ───────────────────────────────────────────
+
+server.registerTool(
+    "search_move_lines",
+    {
+        description:
+            "Rechercher des lignes d'écriture comptable (MoveLine) dans Axelor, en lecture seule. Filtres : partenaire, compte, journal, période, montant restant à payer/lettrer. Par défaut : lignes non soldées du mois en cours (ex : impayés clients/fournisseurs).",
+        inputSchema: {
+            partnerName: z.string().optional().describe("Nom (partiel) du partenaire (client ou fournisseur)"),
+            accountName: z.string().optional().describe("Nom ou code (partiel) du compte comptable"),
+            journalName: z.string().optional().describe("Nom ou code (partiel) du journal"),
+            dateFrom: z.string().optional().describe("Date de début (YYYY-MM-DD). Défaut : 1er jour du mois en cours."),
+            dateTo: z.string().optional().describe("Date de fin (YYYY-MM-DD). Défaut : dernier jour du mois en cours."),
+            unpaidOnly: z
+                .boolean()
+                .optional()
+                .describe("Si true (défaut), ne garde que les lignes avec un montant restant à payer/lettrer > 0"),
+            limit: z.number().optional().describe("Nombre de résultats (défaut : 50)"),
+            offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
+        },
+    },
+    async ({ partnerName, accountName, journalName, dateFrom, dateTo, unpaidOnly, limit, offset }) => {
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const firstOfMonth = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
+        const lastOfMonthDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        const lastOfMonth = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(lastOfMonthDay)}`;
+
+        const criteria: Criterion[] = [
+            { fieldName: "partner", operator: "notNull", value: null },
+            { fieldName: "date", operator: ">=", value: dateFrom ?? firstOfMonth },
+            { fieldName: "date", operator: "<=", value: dateTo ?? lastOfMonth },
+        ];
+
+        if (partnerName) criteria.push({ fieldName: "partner.name", operator: "like", value: `%${partnerName}%` });
+        if (accountName)
+            criteria.push({
+                operator: "or",
+                criteria: [
+                    { fieldName: "account.name", operator: "like", value: `%${accountName}%` },
+                    { fieldName: "account.code", operator: "like", value: `%${accountName}%` },
+                ],
+            });
+        if (journalName)
+            criteria.push({ fieldName: "move.journal.name", operator: "like", value: `%${journalName}%` });
+        if (unpaidOnly !== false) criteria.push({ fieldName: "amountRemaining", operator: ">", value: 0 });
+
+        const { data, total } = await axelorSearch(CLASSES.moveLine, MOVE_LINE_FIELDS, criteria, {
+            sortBy: ["-amountRemaining"],
+            limit: limit ?? 50,
+            offset: offset ?? 0,
+        });
+        return text(formatResult("ligne d'écriture", data, total));
     },
 );
 
@@ -1887,6 +1980,12 @@ server.registerTool(
             startingDate: z.string().optional().describe("Date de prise de poste (YYYY-MM-DD)"),
             jobDescription: z.string().optional().describe("Description de l'offre"),
             profileWanted: z.string().optional().describe("Profil recherché"),
+            confirm: z
+                .boolean()
+                .optional()
+                .describe(
+                    "Mettre à true uniquement après validation explicite de l'utilisateur. Sans ce paramètre (ou false), l'outil renvoie un aperçu du poste sans rien créer.",
+                ),
         },
     },
     async ({
@@ -1903,6 +2002,7 @@ server.registerTool(
         startingDate,
         jobDescription,
         profileWanted,
+        confirm,
     }) => {
         const experienceMap = { "0-2": 1, "2-5": 2, "5-10": 3, "+10": 4 };
         const data: Record<string, unknown> = { jobTitle };
@@ -1919,6 +2019,8 @@ server.registerTool(
         if (startingDate !== undefined) data.startingDate = startingDate;
         if (jobDescription !== undefined) data.jobDescription = jobDescription;
         if (profileWanted !== undefined) data.profileWanted = profileWanted;
+
+        if (!confirm) return text(confirmPreview("Le poste à pourvoir", data));
 
         const result = await axelorCreate(CLASSES.jobPosition, data);
         return text(result ? JSON.stringify(result, null, 2) : "Échec de la création du poste.");
