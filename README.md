@@ -50,6 +50,10 @@ npm run build
 
 Créer un fichier `.env` à la racine du projet :
 
+```bash
+nano .env
+```
+
 ```env
 AXELOR_BASE_URL=https://instance-client.axelor.com
 AXELOR_USERNAME=identifiant_client
