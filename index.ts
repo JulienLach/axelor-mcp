@@ -107,6 +107,13 @@ function formatResult(label: string, data: unknown[], total: number): string {
     return `${data.length} résultat(s) sur ${total} au total :\n\n${JSON.stringify(data, null, 2)}`;
 }
 
+// Un M2O vers Partner renvoie son namecolumn (fullName), pas name
+type PartnerRef = { id: number; fullName?: string; name?: string } | null;
+
+function partnerName(partner: PartnerRef): string | undefined {
+    return partner?.fullName ?? partner?.name;
+}
+
 function text(content: string) {
     return { content: [{ type: "text" as const, text: content }] };
 }
@@ -211,7 +218,7 @@ type SaleOrderAnalysis = {
     totalCostPrice: number | string;
     totalGrossMargin: number | string;
     marginRate: number | string;
-    clientPartner: { id: number; name: string } | null;
+    clientPartner: PartnerRef;
     salespersonUser: { id: number; name: string } | null;
     currency: { id: number; name: string } | null;
 };
@@ -240,7 +247,7 @@ function groupOrders(orders: SaleOrderAnalysis[], groupBy: "month" | "client" | 
     for (const o of orders) {
         let key: string;
         if (groupBy === "month") key = o.orderDate ? o.orderDate.slice(0, 7) : "inconnu";
-        else if (groupBy === "client") key = o.clientPartner?.name ?? "inconnu";
+        else if (groupBy === "client") key = partnerName(o.clientPartner) ?? "inconnu";
         else if (groupBy === "salesperson") key = o.salespersonUser?.name ?? "non assigné";
         else key = statusLabels[o.statusSelect] ?? String(o.statusSelect);
 
@@ -1322,7 +1329,7 @@ server.registerTool(
 type ProjectAnalysis = {
     id: number;
     name: string;
-    clientPartner: { id: number; name: string } | null;
+    clientPartner: PartnerRef;
     assignedTo: { id: number; name: string } | null;
     projectStatus: { id: number; name: string } | null;
     fromDate: string | null;
@@ -1358,7 +1365,7 @@ function groupProjects(
 
     for (const p of projects) {
         let key: string;
-        if (groupBy === "client") key = p.clientPartner?.name ?? "sans client";
+        if (groupBy === "client") key = partnerName(p.clientPartner) ?? "sans client";
         else if (groupBy === "assignedTo") key = p.assignedTo?.name ?? "non assigné";
         else key = p.projectStatus?.name ?? "sans statut";
 
