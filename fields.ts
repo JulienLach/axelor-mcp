@@ -298,6 +298,7 @@ export const TIMESHEET_FIELDS = [
     "fromDate",
     "toDate",
     "periodTotal",
+    "timeLoggingPreferenceSelect",
     "statusSelect",
     "isCompleted",
     "sentDateTime",
@@ -315,11 +316,19 @@ export const TIMESHEET_LINE_FIELDS = [
     "date",
     "hoursDuration",
     "comments",
+    "employee",
     "timesheet",
-    "timesheet.employee",
     "timesheet.statusSelect",
     "project",
     "projectTask",
+    "product",
+    "isExtraHours",
+    // Facturation du temps (projets commerciaux)
+    "toInvoice",
+    "invoiced",
+    "customerDurationHours",
+    "companyExTaxSalesTotal",
+    "companyExTaxCostTotal",
     "createdOn",
 ];
 

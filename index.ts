@@ -1689,7 +1689,25 @@ server.registerTool(
     2 = En attente de validation
     3 = Validée
     4 = Refusée
+    5 = Annulée
 */
+
+const TIMESHEET_STATUS = { draft: 1, waiting: 2, validated: 3, refused: 4, cancelled: 5 };
+type TimesheetStatus = keyof typeof TIMESHEET_STATUS;
+const TIMESHEET_STATUS_KEYS = ["draft", "waiting", "validated", "refused", "cancelled"] as const;
+// Par défaut, le temps des feuilles refusées ou annulées n'est pas compté
+const DEFAULT_TIMESHEET_STATUSES: TimesheetStatus[] = ["draft", "waiting", "validated"];
+
+// Une ligne de temps peut être saisie sans feuille (temps imputé directement sur le projet) : on la garde
+function timesheetStatusCriterion(statuses: readonly TimesheetStatus[]): Criterion {
+    return {
+        operator: "or",
+        criteria: [
+            { fieldName: "timesheet", operator: "isNull", value: null },
+            { fieldName: "timesheet.statusSelect", operator: "in", value: statuses.map((st) => TIMESHEET_STATUS[st]) },
+        ],
+    };
+}
 
 server.registerTool(
     "search_timesheets",
@@ -1699,9 +1717,9 @@ server.registerTool(
         inputSchema: {
             employeeName: z.string().optional().describe("Nom (partiel) de l'employé"),
             statusSelect: z
-                .enum(["draft", "waiting", "validated", "refused"])
+                .enum(TIMESHEET_STATUS_KEYS)
                 .optional()
-                .describe("Statut : draft=1, waiting=2, validated=3, refused=4"),
+                .describe("Statut : draft=1, waiting=2, validated=3, refused=4, cancelled=5"),
             dateFrom: z
                 .string()
                 .optional()
@@ -1715,11 +1733,11 @@ server.registerTool(
         },
     },
     async ({ employeeName, statusSelect, dateFrom, dateTo, limit, offset }) => {
-        const statusMap = { draft: 1, waiting: 2, validated: 3, refused: 4 };
         const criteria: Criterion[] = [];
 
         if (employeeName) criteria.push({ fieldName: "employee.name", operator: "like", value: `%${employeeName}%` });
-        if (statusSelect) criteria.push({ fieldName: "statusSelect", operator: "=", value: statusMap[statusSelect] });
+        if (statusSelect)
+            criteria.push({ fieldName: "statusSelect", operator: "=", value: TIMESHEET_STATUS[statusSelect] });
         if (dateFrom) criteria.push({ fieldName: "fromDate", operator: ">=", value: dateFrom });
         if (dateTo) criteria.push({ fieldName: "toDate", operator: "<=", value: dateTo });
         if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
@@ -1754,20 +1772,17 @@ type TimesheetLineData = {
     date: string | null;
     hoursDuration: number | string | null;
     comments?: string;
-    timesheet?: {
-        id: number;
-        employee?: { id: number; name: string } | null;
-        statusSelect?: number;
-    };
-    project?: { id: number; name: string } | null;
-    projectTask?: { id: number; name: string } | null;
+    employee?: { id: number; name?: string; fullName?: string } | null;
+    project?: { id: number; name?: string; fullName?: string } | null;
+    projectTask?: { id: number; name?: string; fullName?: string } | null;
 };
 
 type TimeGroup = {
     key: string;
     totalHours: number;
     lineCount: number;
-    taskBreakdown: Record<string, number>;
+    // Par projet : heures par tâche ; par employé : heures par projet
+    breakdown: Record<string, number>;
 };
 
 function groupTimesheetLines(lines: TimesheetLineData[], groupBy: "project" | "employee"): TimeGroup[] {
@@ -1775,30 +1790,34 @@ function groupTimesheetLines(lines: TimesheetLineData[], groupBy: "project" | "e
 
     for (const line of lines) {
         const hours = Number(line.hoursDuration) || 0;
-        const taskName = refName(line.projectTask) ?? "Sans tâche";
 
         let key: string;
+        let detail: string;
         if (groupBy === "employee") {
-            key = refName(line.timesheet?.employee) ?? "Non assigné";
+            key = refName(line.employee) ?? "Non assigné";
+            detail = refName(line.project) ?? "Sans projet";
         } else {
             key = refName(line.project) ?? "Sans projet";
+            detail = refName(line.projectTask) ?? "Sans tâche";
         }
 
-        const g = map.get(key) ?? { key, totalHours: 0, lineCount: 0, taskBreakdown: {} };
+        const g = map.get(key) ?? { key, totalHours: 0, lineCount: 0, breakdown: {} };
         g.totalHours += hours;
         g.lineCount++;
-        g.taskBreakdown[taskName] = (g.taskBreakdown[taskName] ?? 0) + hours;
+        g.breakdown[detail] = (g.breakdown[detail] ?? 0) + hours;
         map.set(key, g);
     }
 
     return [...map.values()].sort((a, b) => b.totalHours - a.totalHours);
 }
 
+const fmtH = (h: number) => `${h.toFixed(1)} h`;
+
 server.registerTool(
     "summary_timesheet_by_project",
     {
         description:
-            "Résumé du temps passé agrégé par projet ou employé. Groupable par projet (défaut) ou employee. Filtres : période obligatoire, employé, projet.",
+            "Résumé du temps passé agrégé par projet ou employé. Groupable par projet (défaut) ou employee. Filtres : période obligatoire, employé, projet, statut de la feuille de temps (défaut : hors feuilles refusées et annulées).",
         inputSchema: {
             dateFrom: z.string().describe("Date de début (YYYY-MM-DD)"),
             dateTo: z.string().describe("Date de fin (YYYY-MM-DD)"),
@@ -1808,17 +1827,22 @@ server.registerTool(
                 .describe("Axe d'agrégation : project (défaut) ou employee"),
             employeeName: z.string().optional().describe("Filtrer par employé (nom partiel)"),
             projectName: z.string().optional().describe("Filtrer par projet (nom partiel)"),
+            statusSelect: z
+                .array(z.enum(TIMESHEET_STATUS_KEYS))
+                .optional()
+                .describe("Statuts de feuille de temps à inclure (défaut : draft, waiting, validated)"),
             topN: z.number().optional().describe("Nombre de groupes à afficher (défaut : 20)"),
         },
     },
-    async ({ dateFrom, dateTo, groupBy = "project", employeeName, projectName, topN = 20 }) => {
+    async ({ dateFrom, dateTo, groupBy = "project", employeeName, projectName, statusSelect, topN = 20 }) => {
+        const statuses = statusSelect?.length ? statusSelect : DEFAULT_TIMESHEET_STATUSES;
         const criteria: Criterion[] = [
             { fieldName: "date", operator: ">=", value: dateFrom },
             { fieldName: "date", operator: "<=", value: dateTo },
+            timesheetStatusCriterion(statuses),
         ];
 
-        if (employeeName)
-            criteria.push({ fieldName: "timesheet.employee.name", operator: "like", value: `%${employeeName}%` });
+        if (employeeName) criteria.push({ fieldName: "employee.name", operator: "like", value: `%${employeeName}%` });
         if (projectName) criteria.push({ fieldName: "project.name", operator: "like", value: `%${projectName}%` });
 
         const { data, total } = await axelorSearch(CLASSES.timesheetLine, TIMESHEET_LINE_FIELDS, criteria, {
@@ -1830,45 +1854,28 @@ server.registerTool(
         const allGroups = groupTimesheetLines(lines, groupBy);
         const displayed = allGroups.slice(0, topN);
 
-        const fmtH = (h: number) => `${h.toFixed(1)} h`;
+        const groupLabel = groupBy === "project" ? "Projet" : "Employé";
+        const detailLabel = groupBy === "project" ? "Tâches principales" : "Projets concernés";
+        const separator = `-----|${"-".repeat(30)}|${"-".repeat(10)}|--------|${"-".repeat(42)}`;
 
         const output: string[] = [
             `Résumé temps passé — groupBy: ${groupBy} | Période: ${dateFrom} → ${dateTo}`,
-            `${lines.length} ligne(s) analysée(s) sur ${total} au total`,
+            `Statuts de feuille: ${statuses.join(", ")} | ${lines.length} ligne(s) analysée(s) sur ${total} au total`,
             "",
+            `Rang | ${groupLabel.padEnd(28)} | ${"Heures".padStart(8)} | Lignes | ${detailLabel.padEnd(40)}`,
+            separator,
         ];
 
-        if (groupBy === "project") {
+        displayed.forEach((g, i) => {
+            const topDetails = Object.entries(g.breakdown)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 3)
+                .map(([d, h]) => `${d} (${fmtH(h)})`)
+                .join(", ");
             output.push(
-                `Rang | ${"Projet".padEnd(28)} | ${"Heures".padStart(8)} | Lignes | ${"Tâches principales".padEnd(40)}`,
-                `-----|${"-".repeat(30)}|${"-".repeat(10)}|--------|${"-".repeat(42)}`,
+                `${String(i + 1).padStart(4)} | ${g.key.padEnd(28)} | ${fmtH(g.totalHours).padStart(8)} | ${String(g.lineCount).padStart(6)} | ${topDetails}`,
             );
-            displayed.forEach((g, i) => {
-                const topTasks = Object.entries(g.taskBreakdown)
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 3)
-                    .map(([t, h]) => `${t} (${fmtH(h)})`)
-                    .join(", ");
-                output.push(
-                    `${String(i + 1).padStart(4)} | ${g.key.padEnd(28)} | ${fmtH(g.totalHours).padStart(8)} | ${String(g.lineCount).padStart(6)} | ${topTasks}`,
-                );
-            });
-        } else {
-            output.push(
-                `Rang | ${"Employé".padEnd(28)} | ${"Heures".padStart(8)} | Lignes | ${"Projets concernés".padEnd(40)}`,
-                `-----|${"-".repeat(30)}|${"-".repeat(10)}|--------|${"-".repeat(42)}`,
-            );
-            displayed.forEach((g, i) => {
-                const topProjects = Object.entries(g.taskBreakdown)
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 3)
-                    .map(([p, h]) => `${p} (${fmtH(h)})`)
-                    .join(", ");
-                output.push(
-                    `${String(i + 1).padStart(4)} | ${g.key.padEnd(28)} | ${fmtH(g.totalHours).padStart(8)} | ${String(g.lineCount).padStart(6)} | ${topProjects}`,
-                );
-            });
-        }
+        });
 
         const tot = allGroups.reduce(
             (acc, g) => ({
@@ -1879,7 +1886,7 @@ server.registerTool(
         );
 
         output.push(
-            `-----|${"-".repeat(30)}|${"-".repeat(10)}|--------|${"-".repeat(42)}`,
+            separator,
             `TOTAL| ${"—".padEnd(28)} | ${fmtH(tot.totalHours).padStart(8)} | ${String(tot.lineCount).padStart(6)} |`,
         );
 
