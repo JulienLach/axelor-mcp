@@ -392,6 +392,8 @@ Vérifié sur AOS 9.1.8 :
 
 Modèles : `analyze_sales`, `analyze_invoices`, `analyze_projects`, `analyze_unbilled_time`.
 
+- Un nouveau tool `analyze_*` doit aussi être ajouté à la liste du prompt `dashboard_guidelines` (`DASHBOARD_GUIDELINES` dans `index.ts`), sinon Claude ne le proposera pas pour les dashboards.
+
 - Un seul `axelorSearch` avec `limit: 2000`, agrégation en mémoire, avertissement si `fetched < total`.
 - `groupBy` en enum zod, `topN` pour l'affichage, ligne TOTAL calculée sur **tous** les groupes.
 - Statuts par défaut explicites (hors annulées ; hors brouillons pour la facturation).

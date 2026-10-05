@@ -2750,6 +2750,68 @@ server.registerTool(
     },
 );
 
+// ── Prompts ───────────────────────────────────────────────────────────────────
+
+const DASHBOARD_GUIDELINES = `# Guide pour construire un dashboard à partir d'Axelor
+
+Tu construis un dashboard à partir des données de l'ERP Axelor, via les tools de ce serveur MCP. Le MCP fournit les données ; la mise en forme (artefact, graphiques, tableaux) est de ton ressort.
+
+## 1. Choisir les bons tools
+- Pour les indicateurs, utilise les tools d'analyse, qui agrègent jusqu'à 2000 enregistrements en un seul appel :
+  - ventes (devis et commandes) → \`analyze_sales\`
+  - facturation nette (factures − avoirs) → \`analyze_invoices\`
+  - pipeline commercial → \`analyze_opportunities\`
+  - produits → \`analyze_products\`
+  - projets et retards → \`analyze_projects\`
+  - temps passé → \`summary_timesheet_by_project\`
+  - en-cours de temps non facturé → \`analyze_unbilled_time\`
+  - anomalies techniques → \`analyze_tracebacks\`
+- N'appelle pas les tools \`get_*\` en boucle pour reconstruire un total : c'est lent, incomplet et coûteux. Réserve-les au détail d'un enregistrement précis.
+- Pour ventiler par équipe, utilise \`groupBy: "team"\` (disponible sur \`analyze_sales\`, \`analyze_invoices\` et \`analyze_unbilled_time\`).
+- N'appelle jamais un tool \`create_*\` : un dashboard est en lecture seule.
+
+## 2. Définir les périodes
+- Convertis chaque période en dates explicites (\`dateFrom\` / \`dateTo\`) et affiche-les sur le dashboard.
+- Les dates de référence sont celles des tools : date de commande pour les ventes, date de facture pour la facturation, date de saisie pour les temps, date de closing prévue pour les opportunités. Ne mélange pas les conventions au sein d'un même dashboard.
+- Plusieurs fenêtres (semaine, mois, exercice) se recoupent : présente-les côte à côte, jamais additionnées.
+
+## 3. Présenter les chiffres
+- Montants hors taxes (HT), sauf demande contraire, en indiquant l'unité.
+- Reprends la ligne TOTAL fournie par les tools plutôt que de recalculer à partir des groupes affichés (le top N n'est pas le total).
+- Indique la date de génération du dashboard.
+
+## 4. Être honnête sur les données
+- N'invente, n'estime ni n'extrapole aucun chiffre. Si une donnée manque, affiche-la comme indisponible et explique pourquoi.
+- Si un tool signale une limite atteinte (« ⚠ Seules N … sur M »), réduis la période ou ajoute des filtres plutôt que d'afficher un total partiel.
+- Signale les groupes « inconnu », « sans équipe » ou « non assigné » s'ils pèsent lourd : ils révèlent un défaut de saisie dans l'ERP.
+- Termine par une courte note de méthodologie : tools utilisés, périodes, filtres, limites rencontrées.`;
+
+server.registerPrompt(
+    "dashboard_guidelines",
+    {
+        title: "Guide de création de dashboard",
+        description:
+            "Bonnes pratiques pour construire un dashboard fiable à partir des données Axelor : tools à utiliser, périodes, présentation des chiffres, honnêteté sur les données.",
+        argsSchema: {
+            besoin: z
+                .string()
+                .optional()
+                .describe("Dashboard souhaité (ex : CA et facturation par équipe sur le mois)"),
+        },
+    },
+    ({ besoin }) => ({
+        messages: [
+            {
+                role: "user",
+                content: {
+                    type: "text",
+                    text: besoin ? `${DASHBOARD_GUIDELINES}\n\n## Dashboard demandé\n${besoin}` : DASHBOARD_GUIDELINES,
+                },
+            },
+        ],
+    }),
+);
+
 // ── Démarrage ─────────────────────────────────────────────────────────────────
 
 async function main() {

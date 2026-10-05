@@ -12,6 +12,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 - **`analyze_unbilled_time`**: unbilled time (work in progress). Timesheet lines to invoice that are not invoiced yet, in hours and valued excl. tax (sales and cost), grouped by project, client, team or employee.
 - **`search_timesheet_lines`**: detailed list of timesheet lines (date, employee, project, task, activity, hours, comment, invoicing status and valuation), with pagination.
+- **`dashboard_guidelines` prompt**: first MCP prompt of the server. Generic guidelines to build reliable dashboards from Axelor data (which tools to use for each indicator, explicit periods, excl. tax amounts, no invented figures, methodology note), with an optional description of the requested dashboard.
 
 ### Changed
 
@@ -27,7 +28,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Documentation
 
-- README: examples for the new timesheet tools.
+- README: examples for the new timesheet tools and the dashboard guidelines prompt.
 - `axelor-analyser` skill: verified `TimesheetLine` model (durations, invoicing fields, unbilled time definition) and timesheet statuses.
 
 ## [1.0.3] - 2026-10-05

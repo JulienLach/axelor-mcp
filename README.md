@@ -187,3 +187,7 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 - `search_tracebacks` — _"Montre-moi les erreurs bloquantes de la semaine"_, _"Anomalies sur le module de facturation depuis lundi"_ (filtres : période, catégorie non_bloquant/bloquant/fonctionnel, origine, exception, utilisateur, archivé)
 - `get_traceback` — _"Analyse technique de cette anomalie"_ — chaîne d'exceptions, frames applicatifs isolés (bruit framework filtré), premier point d'entrée probable du bug ; option `showFullTrace` pour la stack brute complète
 - `analyze_tracebacks` — _"Quelles sont les erreurs les plus fréquentes ce mois-ci ?"_, _"Y a-t-il une régression sur le module de vente ?"_ — top exceptions par fréquence, top modules/origines touchés, tendance par jour sur 14 jours (⚠ erreurs bloquantes mises en évidence)
+
+**Dashboards**
+
+- `dashboard_guidelines` (prompt) — guide de bonnes pratiques à lancer avant de demander un dashboard : tools à utiliser pour chaque indicateur, périodes explicites, montants HT, aucun chiffre inventé, note de méthodologie. Dans Claude Desktop, il se lance depuis le bouton « + » de la zone de message, parmi les options du connecteur Axelor. Paramètre optionnel : le dashboard souhaité, par exemple _"CA et facturation par équipe sur le mois"_.
