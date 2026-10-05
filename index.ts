@@ -22,6 +22,7 @@ import {
     TIMESHEET_LINE_FIELDS,
     TRACEBACK_FIELDS,
     TRACEBACK_DETAIL_FIELDS,
+    UNBILLED_TIME_FIELDS,
 } from "./fields.ts";
 
 const BASE_URL = process.env.AXELOR_BASE_URL;
@@ -1754,7 +1755,8 @@ server.registerTool(
 server.registerTool(
     "get_timesheet",
     {
-        description: "Obtenir tous les détails d'une feuille de temps Axelor par son ID, incluant les lignes saisies.",
+        description:
+            "Obtenir une feuille de temps Axelor par son ID (période, total, statut, validation). Pour le détail des lignes saisies, utiliser search_timesheet_lines.",
         inputSchema: {
             id: z.number().describe("ID de la feuille de temps (champ 'id' retourné par search_timesheets)"),
         },
@@ -1894,6 +1896,205 @@ server.registerTool(
             output.push(
                 "",
                 `⚠ Seules ${lines.length} lignes sur ${total} ont été analysées (limite 2000) — affiner la période.`,
+            );
+        }
+
+        return text(output.join("\n"));
+    },
+);
+
+server.registerTool(
+    "search_timesheet_lines",
+    {
+        description:
+            "Lister le détail des lignes de temps (TimesheetLine) : date, employé, projet, tâche, activité, heures, commentaire, état de facturation et valorisation. Filtres : employé, projet, période, à facturer, facturé, statut de la feuille (défaut : hors feuilles refusées et annulées). Supporte la pagination.",
+        inputSchema: {
+            employeeName: z.string().optional().describe("Filtrer par employé (nom partiel)"),
+            projectName: z.string().optional().describe("Filtrer par projet (nom partiel)"),
+            dateFrom: z.string().optional().describe("Date minimale (YYYY-MM-DD)"),
+            dateTo: z.string().optional().describe("Date maximale (YYYY-MM-DD)"),
+            toInvoice: z
+                .boolean()
+                .optional()
+                .describe("Filtrer les lignes à facturer (true) ou non facturables (false)"),
+            invoiced: z
+                .boolean()
+                .optional()
+                .describe("Filtrer les lignes déjà facturées (true) ou non facturées (false)"),
+            statusSelect: z
+                .array(z.enum(TIMESHEET_STATUS_KEYS))
+                .optional()
+                .describe("Statuts de feuille de temps à inclure (défaut : draft, waiting, validated)"),
+            limit: z.number().optional().describe("Nombre de résultats (défaut : 50)"),
+            offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
+        },
+    },
+    async ({ employeeName, projectName, dateFrom, dateTo, toInvoice, invoiced, statusSelect, limit, offset }) => {
+        const statuses = statusSelect?.length ? statusSelect : DEFAULT_TIMESHEET_STATUSES;
+        const criteria: Criterion[] = [timesheetStatusCriterion(statuses)];
+
+        if (employeeName) criteria.push({ fieldName: "employee.name", operator: "like", value: `%${employeeName}%` });
+        if (projectName) criteria.push({ fieldName: "project.name", operator: "like", value: `%${projectName}%` });
+        if (dateFrom) criteria.push({ fieldName: "date", operator: ">=", value: dateFrom });
+        if (dateTo) criteria.push({ fieldName: "date", operator: "<=", value: dateTo });
+        if (toInvoice !== undefined) criteria.push({ fieldName: "toInvoice", operator: "=", value: toInvoice });
+        if (invoiced !== undefined) criteria.push({ fieldName: "invoiced", operator: "=", value: invoiced });
+
+        const { data, total } = await axelorSearch(CLASSES.timesheetLine, TIMESHEET_LINE_FIELDS, criteria, {
+            sortBy: ["-date"],
+            limit: limit ?? 50,
+            offset: offset ?? 0,
+        });
+        return text(formatResult("ligne de temps", data, total));
+    },
+);
+
+// ── Temps à facturer non facturé (en-cours) ──────────────────────────────────
+
+type UnbilledTimeLine = {
+    id: number;
+    hoursDuration: number | string | null;
+    customerDurationHours: number | string | null;
+    companyExTaxSalesTotal: number | string | null;
+    companyExTaxCostTotal: number | string | null;
+    employee?: { id: number; name?: string; fullName?: string } | null;
+    project?: { id: number; name?: string; fullName?: string } | null;
+    "project.clientPartner.fullName"?: string;
+    "project.team.name"?: string;
+};
+
+type UnbilledGroup = {
+    key: string;
+    lineCount: number;
+    hours: number;
+    customerHours: number;
+    salesValue: number;
+    costValue: number;
+};
+
+function unbilledGroupKey(line: UnbilledTimeLine, groupBy: "project" | "client" | "team" | "employee"): string {
+    if (groupBy === "client") return line["project.clientPartner.fullName"] ?? "sans client";
+    if (groupBy === "team") return line["project.team.name"] ?? "sans équipe";
+    if (groupBy === "employee") return refName(line.employee) ?? "non assigné";
+    return refName(line.project) ?? "sans projet";
+}
+
+function groupUnbilledTime(
+    lines: UnbilledTimeLine[],
+    groupBy: "project" | "client" | "team" | "employee",
+): UnbilledGroup[] {
+    const map = new Map<string, UnbilledGroup>();
+
+    for (const line of lines) {
+        const key = unbilledGroupKey(line, groupBy);
+        const g = map.get(key) ?? { key, lineCount: 0, hours: 0, customerHours: 0, salesValue: 0, costValue: 0 };
+        g.lineCount++;
+        g.hours += Number(line.hoursDuration) || 0;
+        g.customerHours += Number(line.customerDurationHours) || 0;
+        g.salesValue += Number(line.companyExTaxSalesTotal) || 0;
+        g.costValue += Number(line.companyExTaxCostTotal) || 0;
+        map.set(key, g);
+    }
+
+    return [...map.values()].sort((a, b) => b.salesValue - a.salesValue || b.hours - a.hours);
+}
+
+function formatUnbilledLine(label: string, g: Omit<UnbilledGroup, "key">): string {
+    return `${label} | ${String(g.lineCount).padStart(6)} | ${fmtH(g.hours).padStart(9)} | ${fmtH(g.customerHours).padStart(9)} | ${fmt(g.salesValue).padStart(14)} | ${fmt(g.costValue).padStart(14)}`;
+}
+
+server.registerTool(
+    "analyze_unbilled_time",
+    {
+        description:
+            "En-cours de temps : temps passé à facturer mais pas encore facturé (lignes de temps toInvoice = true et invoiced = false), en heures et valorisé HT (prix de vente et coût), par projet, client, équipe ou employé. Par défaut : tout l'en-cours à date, hors feuilles refusées et annulées.",
+        inputSchema: {
+            groupBy: z
+                .enum(["project", "client", "team", "employee"])
+                .describe("Axe d'analyse : project (en-cours par affaire), client, team (équipe du projet), employee"),
+            dateFrom: z.string().optional().describe("Date minimale des lignes de temps (YYYY-MM-DD)"),
+            dateTo: z
+                .string()
+                .optional()
+                .describe("Date maximale des lignes de temps (YYYY-MM-DD) — en-cours arrêté à cette date"),
+            clientName: z.string().optional().describe("Filtrer par client du projet (nom partiel)"),
+            projectName: z.string().optional().describe("Filtrer par projet (nom partiel)"),
+            employeeName: z.string().optional().describe("Filtrer par employé (nom partiel)"),
+            teamName: z.string().optional().describe("Filtrer par équipe du projet (nom partiel)"),
+            statusSelect: z
+                .array(z.enum(TIMESHEET_STATUS_KEYS))
+                .optional()
+                .describe("Statuts de feuille de temps à inclure (défaut : draft, waiting, validated)"),
+            topN: z.number().optional().describe("Nombre de groupes à afficher (défaut : 20)"),
+        },
+    },
+    async ({ groupBy, dateFrom, dateTo, clientName, projectName, employeeName, teamName, statusSelect, topN = 20 }) => {
+        const statuses = statusSelect?.length ? statusSelect : DEFAULT_TIMESHEET_STATUSES;
+        const criteria: Criterion[] = [
+            { fieldName: "toInvoice", operator: "=", value: true },
+            // invoiced est un Boolean nullable, comme archived
+            {
+                operator: "or",
+                criteria: [
+                    { fieldName: "invoiced", operator: "isNull", value: null },
+                    { fieldName: "invoiced", operator: "=", value: false },
+                ],
+            },
+            timesheetStatusCriterion(statuses),
+        ];
+        if (dateFrom) criteria.push({ fieldName: "date", operator: ">=", value: dateFrom });
+        if (dateTo) criteria.push({ fieldName: "date", operator: "<=", value: dateTo });
+        if (clientName)
+            criteria.push({ fieldName: "project.clientPartner.name", operator: "like", value: `%${clientName}%` });
+        if (projectName) criteria.push({ fieldName: "project.name", operator: "like", value: `%${projectName}%` });
+        if (employeeName) criteria.push({ fieldName: "employee.name", operator: "like", value: `%${employeeName}%` });
+        if (teamName) criteria.push({ fieldName: "project.team.name", operator: "like", value: `%${teamName}%` });
+
+        const { data, total } = await axelorSearch(CLASSES.timesheetLine, UNBILLED_TIME_FIELDS, criteria, {
+            limit: 2000,
+        });
+
+        const lines = data as UnbilledTimeLine[];
+        const allGroups = groupUnbilledTime(lines, groupBy);
+        const periode = dateFrom || dateTo ? `${dateFrom ?? "…"} → ${dateTo ?? "…"}` : "tout l'en-cours à date";
+        const separator = `-----|${"-".repeat(32)}|--------|-----------|-----------|${"-".repeat(16)}|${"-".repeat(16)}`;
+
+        const output: string[] = [
+            `En-cours de temps (à facturer, non facturé) — groupBy: ${groupBy} | Période: ${periode}`,
+            `Statuts de feuille: ${statuses.join(", ")} | ${lines.length} ligne(s) analysée(s) sur ${total}`,
+            "",
+            `Rang | ${"Groupe".padEnd(30)} | Lignes | ${"Heures".padStart(9)} | ${"H. client".padStart(9)} | ${"Valeur HT".padStart(14)} | ${"Coût HT".padStart(14)}`,
+            separator,
+        ];
+        allGroups.slice(0, topN).forEach((g, i) => {
+            output.push(formatUnbilledLine(`${String(i + 1).padStart(4)} | ${g.key.padEnd(30)}`, g));
+        });
+
+        // Ligne TOTAL sur l'ensemble des groupes (pas seulement topN)
+        const tot = allGroups.reduce(
+            (acc, g) => ({
+                lineCount: acc.lineCount + g.lineCount,
+                hours: acc.hours + g.hours,
+                customerHours: acc.customerHours + g.customerHours,
+                salesValue: acc.salesValue + g.salesValue,
+                costValue: acc.costValue + g.costValue,
+            }),
+            { lineCount: 0, hours: 0, customerHours: 0, salesValue: 0, costValue: 0 },
+        );
+        output.push(separator, formatUnbilledLine(`TOTAL| ${"—".padEnd(30)}`, tot));
+        output.push(
+            "",
+            "Heures = temps passé (hoursDuration) ; H. client = durée facturable au client (customerDurationHours) ; Valeur HT / Coût HT = valorisation du temps en devise société (companyExTaxSalesTotal / companyExTaxCostTotal).",
+        );
+
+        if (lines.length > 0 && tot.salesValue === 0) {
+            output.push(
+                "⚠ Valorisation nulle sur toutes les lignes : le prix de vente du temps n'est probablement pas renseigné (projets commerciaux) — seules les heures sont exploitables.",
+            );
+        }
+        if (lines.length < total) {
+            output.push(
+                `⚠ Seules ${lines.length} lignes sur ${total} ont été analysées (limite 2000) — affiner la période ou les filtres.`,
             );
         }
 

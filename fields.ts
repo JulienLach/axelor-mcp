@@ -332,6 +332,18 @@ export const TIMESHEET_LINE_FIELDS = [
     "createdOn",
 ];
 
+export const UNBILLED_TIME_FIELDS = [
+    "id",
+    "hoursDuration",
+    "customerDurationHours",
+    "companyExTaxSalesTotal",
+    "companyExTaxCostTotal",
+    "employee",
+    "project",
+    "project.clientPartner.fullName",
+    "project.team.name",
+];
+
 export const INVOICE_ANALYSIS_FIELDS = [
     "id",
     "invoiceDate",
