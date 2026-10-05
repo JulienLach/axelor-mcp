@@ -130,7 +130,7 @@ function confirmPreview(label: string, data: Record<string, unknown>): string {
 
 // ── Serveur MCP ───────────────────────────────────────────────────────────────
 
-const server = new McpServer({ name: "axelor-mcp", version: "1.1.0" });
+const server = new McpServer({ name: "axelor-mcp", version: "1.0.1" });
 
 // ── Partenaires ───────────────────────────────────────────────────────────────
 
