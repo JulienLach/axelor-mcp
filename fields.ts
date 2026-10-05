@@ -225,6 +225,7 @@ export const SALE_ANALYSIS_FIELDS = [
     "marginRate",
     "clientPartner",
     "salespersonUser",
+    "team",
     "currency",
 ];
 

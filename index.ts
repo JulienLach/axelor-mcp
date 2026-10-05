@@ -220,6 +220,7 @@ type SaleOrderAnalysis = {
     marginRate: number | string;
     clientPartner: PartnerRef;
     salespersonUser: { id: number; name: string } | null;
+    team: { id: number; name: string } | null;
     currency: { id: number; name: string } | null;
 };
 
@@ -234,7 +235,10 @@ type SaleGroup = {
     invoicingRate: number;
 };
 
-function groupOrders(orders: SaleOrderAnalysis[], groupBy: "month" | "client" | "salesperson" | "status"): SaleGroup[] {
+function groupOrders(
+    orders: SaleOrderAnalysis[],
+    groupBy: "month" | "client" | "salesperson" | "team" | "status",
+): SaleGroup[] {
     const statusLabels: Record<number, string> = {
         1: "Brouillon",
         2: "Devis finalisé",
@@ -249,6 +253,7 @@ function groupOrders(orders: SaleOrderAnalysis[], groupBy: "month" | "client" | 
         if (groupBy === "month") key = o.orderDate ? o.orderDate.slice(0, 7) : "inconnu";
         else if (groupBy === "client") key = partnerName(o.clientPartner) ?? "inconnu";
         else if (groupBy === "salesperson") key = o.salespersonUser?.name ?? "non assigné";
+        else if (groupBy === "team") key = o.team?.name ?? "sans équipe";
         else key = statusLabels[o.statusSelect] ?? String(o.statusSelect);
 
         const g = map.get(key) ?? {
@@ -347,12 +352,12 @@ server.registerTool(
     "analyze_sales",
     {
         description:
-            "Analyse agrégée des commandes clients : CA par mois/client/commercial, marges, taux de facturation. Utiliser dateFrom/dateTo pour la période et groupBy pour l'axe d'analyse.",
+            "Analyse agrégée des commandes clients : CA par mois/client/commercial/équipe, marges, taux de facturation. Utiliser dateFrom/dateTo pour la période et groupBy pour l'axe d'analyse.",
         inputSchema: {
             groupBy: z
-                .enum(["month", "client", "salesperson", "status"])
+                .enum(["month", "client", "salesperson", "team", "status"])
                 .describe(
-                    "Axe d'analyse : month (tendance mensuelle), client (top clients), salesperson (performance commerciaux), status (répartition par statut)",
+                    "Axe d'analyse : month (tendance mensuelle), client (top clients), salesperson (performance commerciaux), team (ventilation par équipe), status (répartition par statut)",
                 ),
             dateFrom: z.string().optional().describe("Date de début (YYYY-MM-DD) — filtre sur orderDate"),
             dateTo: z.string().optional().describe("Date de fin (YYYY-MM-DD) — filtre sur orderDate"),
@@ -362,10 +367,11 @@ server.registerTool(
                 .describe("Statuts à inclure (défaut : draft, finalized, confirmed, completed — hors annulées)"),
             clientName: z.string().optional().describe("Filtrer par client (nom partiel)"),
             salespersonName: z.string().optional().describe("Filtrer par commercial (nom partiel)"),
+            teamName: z.string().optional().describe("Filtrer par équipe (nom partiel)"),
             topN: z.number().optional().describe("Nombre de groupes à afficher (défaut : 20)"),
         },
     },
-    async ({ groupBy, dateFrom, dateTo, statusSelect, clientName, salespersonName, topN = 20 }) => {
+    async ({ groupBy, dateFrom, dateTo, statusSelect, clientName, salespersonName, teamName, topN = 20 }) => {
         const statusMap = { draft: 1, finalized: 2, confirmed: 3, completed: 4, cancelled: 5 };
         const activeStatuses = statusSelect?.length
             ? statusSelect
@@ -383,6 +389,7 @@ server.registerTool(
         if (clientName) criteria.push({ fieldName: "clientPartner.name", operator: "like", value: `%${clientName}%` });
         if (salespersonName)
             criteria.push({ fieldName: "salespersonUser.name", operator: "like", value: `%${salespersonName}%` });
+        if (teamName) criteria.push({ fieldName: "team.name", operator: "like", value: `%${teamName}%` });
 
         const { data, total } = await axelorSearch(CLASSES.saleOrder, SALE_ANALYSIS_FIELDS, criteria, {
             limit: 2000,
