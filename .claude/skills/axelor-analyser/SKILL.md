@@ -54,6 +54,18 @@ GET /ws/rest/{className}/{id}
 { "fieldName": "clientPartner.name", "operator": "like", "value": "%Dupont%" }
 ```
 
+### Champs pointés dans `fields`
+Un champ traversant une relation (`"saleOrder.team.name"`) est renvoyé **à plat**, sous une clé contenant le point :
+```json
+{ "id": 42, "saleOrder.team.name": "Équipe Nord" }
+```
+Côté TypeScript : `inv["saleOrder.team.name"]`, typé `"saleOrder.team.name"?: string`.
+
+### ⚠️ Piège : `archived` est un Boolean nullable
+Un enregistrement jamais archivé a `archived = NULL`, pas `false`. Le critère `archived = false` exclut donc presque tout.
+Toujours utiliser la constante `NOT_ARCHIVED` de `index.ts` (`archived IS NULL OR archived = false`).
+La même prudence vaut pour tout Boolean filtré à `false` (`isBusinessProject`, `isConverted`…).
+
 ---
 
 ## Modules et classes Java principales
@@ -71,6 +83,11 @@ GET /ws/rest/{className}/{id}
 | Banque partenaire | `BankDetails` | RIB / IBAN partenaires |
 | Produit | `Product` | Catalogue produits/services |
 | Catégorie produit | `ProductCategory` | Arborescence catalogue |
+
+### Équipes (`com.axelor.team.db` — package du framework, pas `apps`)
+| Modèle | Classe Java | Usage |
+|---|---|---|
+| Équipe | `Team` | Équipes commerciales / projet (`SaleOrder.team`, `Project.team`, `Lead.team`, `Opportunity.team`) |
 
 ### Ventes (`com.axelor.apps.sale.db`)
 | Modèle | Classe Java | Usage |
@@ -148,6 +165,7 @@ SaleOrder
   ├── deliveredPartner   → Partner
   ├── contactPartner     → Partner
   ├── salespersonUser    → User
+  ├── team               → Team
   ├── company            → Company
   ├── currency           → Currency
   ├── paymentCondition   → PaymentCondition
@@ -170,9 +188,26 @@ Invoice
   ├── paymentMode        → PaymentMode
   ├── saleOrder          → SaleOrder (si facture client)
   ├── purchaseOrder      → PurchaseOrder (si facture fournisseur)
+  ├── project            → Project (facturation de projet)
+  ├── originalInvoice    → Invoice (pour un avoir : la facture d'origine)
   └── invoiceLineList    → [InvoiceLine]
         ├── product      → Product
         └── account      → Account
+```
+- **Pas de champ `team`** sur `Invoice` (confirmé par l'export du modèle) : passer par `saleOrder.team`, à défaut `project.team`.
+- Montants : `exTaxTotal` / `inTaxTotal` / `amountRemaining` sont en devise de la facture ; `companyExTaxTotal` / `companyInTaxTotal` / `companyInTaxTotalRemaining` en devise société (à préférer pour agréger des factures multi-devises).
+- `operationSubTypeSelect` distingue notamment les factures d'acompte — valeurs à confirmer sur l'instance avant de filtrer dessus.
+
+### Project
+```
+Project
+  ├── clientPartner      → Partner
+  ├── contactPartner     → Partner
+  ├── assignedTo         → User
+  ├── team               → Team
+  ├── company            → Company
+  ├── projectStatus      → ProjectStatus (M2O, pas un statusSelect)
+  └── currency           → Currency
 ```
 
 ### StockMove
@@ -262,16 +297,9 @@ Partner
 | 4 | Terminée |
 | 5 | Annulée |
 
-### Opportunity.salesStageSelect
-| Valeur | Libellé |
-|---|---|
-| 0 | Nouveau |
-| 1 | Qualification |
-| 2 | Proposition |
-| 3 | Négociation |
-| 4 | Perdu |
-| 5 | Gagné |
-| 6 | Annulé |
+### Opportunity — étape de vente
+Sur cette instance, l'étape est le M2O `opportunityStatus` → `OpportunityStatus` (référentiel paramétrable), **pas** l'ancien enum `salesStageSelect`.
+Filtrer par `opportunityStatus.name` ou par ID ; ne pas coder de valeurs numériques en dur.
 
 ---
 
@@ -287,14 +315,30 @@ Partner
 ### Ce qu'il faut inclure dans les fields d'un modèle
 - Toujours : `id`, le champ séquence (`*Seq`), le champ nom
 - Statuts : tous les `*Select`, `*State`
-- Relations utiles : les M2O retournent `{ id, $version, name }` — inclure le nom du champ suffit
+- Relations utiles : inclure le nom de la relation suffit (voir ci-dessous ce qu'elle renvoie)
 - Dates clés : `createdOn`, `updatedOn`, dates métier
 - Montants si financier : totaux HT/TTC, états facturation
 
-### Accès aux sous-champs d'une relation
-Quand Axelor retourne un M2O, il retourne `{ "id": 1, "$version": 0, "name": "..." }`.
-Pour filtrer : `"clientPartner.name"` dans les critères.
-Pour afficher : inclure `"clientPartner"` dans fields retourne l'objet complet.
+### Ce que renvoie un M2O
+Inclure `"clientPartner"` dans `fields` renvoie `{ id, $version, <namecolumn> }` : le **namecolumn** du modèle cible, pas forcément `name`.
+Valeurs standard AOS (non encore confirmées sur le JSON réel de l'instance) :
+
+| Modèle cible | Clé renvoyée |
+|---|---|
+| `Partner` | `fullName` |
+| `User`, `Team`, `ProjectStatus`, `OpportunityStatus` | `name` |
+
+- Pour lire le nom d'un partenaire : helper `partnerName()` de `index.ts` (`fullName`, à défaut `name`). Lire `clientPartner.name` donne `undefined` → tout tombe dans « inconnu ».
+- Pour **filtrer**, `"clientPartner.name"` reste valide (`Partner` a bien une colonne `name`).
+- En cas de doute sur un modèle : regarder le JSON brut d'un `get_*` plutôt que supposer.
+
+### Patterns d'un tool `analyze_*`
+Modèles : `analyze_sales`, `analyze_invoices`, `analyze_projects`.
+- Un seul `axelorSearch` avec `limit: 2000`, agrégation en mémoire, avertissement si `fetched < total`.
+- `groupBy` en enum zod, `topN` pour l'affichage, ligne TOTAL calculée sur **tous** les groupes.
+- Statuts par défaut explicites (hors annulées ; hors brouillons pour la facturation).
+- Factures : avoirs (`operationTypeSelect` 2 et 4) comptés **en négatif**.
+- Axe équipe : `team` sur `SaleOrder` et `Project` ; `saleOrder.team` puis `project.team` sur `Invoice`.
 
 ---
 
@@ -307,5 +351,11 @@ Quand on te demande d'aider à créer un tool MCP :
 3. **Proposer les critères de recherche** → paramètres zod + opérateur API correspondant
 4. **Donner les enums** → valeurs numériques et leur libellé
 5. **Signaler les imbrications utiles** → ce qu'on peut traverser via `relation.champ`
+
+### Vérifier plutôt que supposer
+Les champs varient selon la version d'AOS et les modules installés. Ce skill reflète AOS en général, pas forcément l'instance du client.
+- Avant d'ajouter un champ non encore utilisé dans `fields.ts`, demander à l'utilisateur l'**export CSV du modèle** (depuis l'application). Colonnes : `Nom;Type;Libellé;Relation;Mappé avec`.
+- Cet export **ne donne ni le namecolumn ni les valeurs des selects** : pour ceux-là, s'appuyer sur le JSON brut d'un `get_*` ou sur le tableau des enums ci-dessus.
+- Dire explicitement ce qui est vérifié (export, JSON réel) et ce qui est supposé.
 
 Sois direct, précis, orienté implémentation. Donne du code prêt à coller dans `fields.ts` ou `index.ts`.
