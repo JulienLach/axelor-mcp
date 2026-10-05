@@ -1080,6 +1080,7 @@ type InvoiceAnalysis = {
     amountRemaining: number | string;
     partner: PartnerRef;
     "saleOrder.team.name"?: string;
+    "project.team.name"?: string;
 };
 
 type InvoiceGroup = {
@@ -1098,7 +1099,7 @@ function invoiceGroupKey(inv: InvoiceAnalysis, groupBy: "month" | "client" | "te
     const statusLabels: Record<number, string> = { 1: "Brouillon", 2: "Validée", 3: "Ventilée", 4: "Annulée" };
     if (groupBy === "month") return inv.invoiceDate ? inv.invoiceDate.slice(0, 7) : "inconnu";
     if (groupBy === "client") return partnerName(inv.partner) ?? "inconnu";
-    if (groupBy === "team") return inv["saleOrder.team.name"] ?? "sans équipe";
+    if (groupBy === "team") return inv["saleOrder.team.name"] ?? inv["project.team.name"] ?? "sans équipe";
     return statusLabels[inv.statusSelect] ?? String(inv.statusSelect);
 }
 
@@ -1139,7 +1140,7 @@ server.registerTool(
     "analyze_invoices",
     {
         description:
-            "Analyse agrégée de la facturation : CA facturé net (factures - avoirs) HT/TTC et reste dû, par mois/client/équipe/statut. L'équipe est celle de la commande d'origine (saleOrder.team) : une facture sans commande liée tombe dans « sans équipe ».",
+            "Analyse agrégée de la facturation : CA facturé net (factures - avoirs) HT/TTC et reste dû, par mois/client/équipe/statut. L'équipe est celle de la commande d'origine (saleOrder.team), à défaut celle du projet (project.team) : une facture sans commande ni projet liés tombe dans « sans équipe ».",
         inputSchema: {
             groupBy: z
                 .enum(["month", "client", "team", "status"])
@@ -1159,7 +1160,10 @@ server.registerTool(
                 .optional()
                 .describe("Statuts à inclure (défaut : validated, ventilated — hors brouillons et annulées)"),
             clientName: z.string().optional().describe("Filtrer par client / fournisseur (nom partiel)"),
-            teamName: z.string().optional().describe("Filtrer par équipe de la commande d'origine (nom partiel)"),
+            teamName: z
+                .string()
+                .optional()
+                .describe("Filtrer par équipe de la commande ou du projet d'origine (nom partiel)"),
             topN: z.number().optional().describe("Nombre de groupes à afficher (défaut : 20)"),
         },
     },
@@ -1175,7 +1179,14 @@ server.registerTool(
         if (dateFrom) criteria.push({ fieldName: "invoiceDate", operator: ">=", value: dateFrom });
         if (dateTo) criteria.push({ fieldName: "invoiceDate", operator: "<=", value: dateTo });
         if (clientName) criteria.push({ fieldName: "partner.name", operator: "like", value: `%${clientName}%` });
-        if (teamName) criteria.push({ fieldName: "saleOrder.team.name", operator: "like", value: `%${teamName}%` });
+        if (teamName)
+            criteria.push({
+                operator: "or",
+                criteria: [
+                    { fieldName: "saleOrder.team.name", operator: "like", value: `%${teamName}%` },
+                    { fieldName: "project.team.name", operator: "like", value: `%${teamName}%` },
+                ],
+            });
 
         const { data, total } = await axelorSearch(CLASSES.invoice, INVOICE_ANALYSIS_FIELDS, criteria, {
             limit: 2000,

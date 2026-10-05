@@ -333,6 +333,7 @@ export const INVOICE_ANALYSIS_FIELDS = [
     "amountRemaining",
     "partner",
     "saleOrder.team.name",
+    "project.team.name",
 ];
 
 export const PROJECT_FIELDS = [
