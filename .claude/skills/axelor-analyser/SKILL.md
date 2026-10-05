@@ -251,11 +251,13 @@ Partner
 | 5 | Annulée |
 
 ### SaleOrder.invoicingState / deliveryState
+Sélections `supplychain.sale.order.invoicing.state.select` et `sale.order.delivery.state` — **à partir de 1, pas de 0** (vérifié sur AOS 9.1.8) :
+
 | Valeur | Libellé |
 |---|---|
-| 0 | Non traité |
-| 1 | Partiellement |
-| 2 | Entièrement |
+| 1 | Non facturé / non livré |
+| 2 | Partiellement |
+| 3 | Entièrement |
 
 ### Invoice.statusSelect
 | Valeur | Libellé |
@@ -321,15 +323,15 @@ Filtrer par `opportunityStatus.name` ou par ID ; ne pas coder de valeurs numéri
 
 ### Ce que renvoie un M2O
 Inclure `"clientPartner"` dans `fields` renvoie `{ id, $version, <namecolumn> }` : le **namecolumn** du modèle cible, pas forcément `name`.
-Valeurs standard AOS (non encore confirmées sur le JSON réel de l'instance) :
+Vérifié sur AOS 9.1.8 :
 
 | Modèle cible | Clé renvoyée |
 |---|---|
-| `Partner` | `fullName` |
-| `User`, `Team`, `ProjectStatus`, `OpportunityStatus` | `name` |
+| `Partner`, `User`, `Project`, `ProjectTask`, `Product` | `fullName` |
+| Référentiels (`Team`, `ProjectStatus`, `OpportunityStatus`…) | `name` |
 
-- Pour lire le nom d'un partenaire : helper `partnerName()` de `index.ts` (`fullName`, à défaut `name`). Lire `clientPartner.name` donne `undefined` → tout tombe dans « inconnu ».
-- Pour **filtrer**, `"clientPartner.name"` reste valide (`Partner` a bien une colonne `name`).
+- Pour lire le libellé de **n'importe quelle** relation : helper `refName()` de `index.ts` (`fullName`, à défaut `name`). Ne jamais lire `relation?.name` directement : `clientPartner.name` ou `salespersonUser.name` donnent `undefined` → tout tombe dans « inconnu » / « non assigné ».
+- Pour **filtrer**, `"clientPartner.name"` reste valide (ces modèles ont aussi une colonne `name`).
 - En cas de doute sur un modèle : regarder le JSON brut d'un `get_*` plutôt que supposer.
 
 ### Patterns d'un tool `analyze_*`
