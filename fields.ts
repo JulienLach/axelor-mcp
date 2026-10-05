@@ -318,6 +318,18 @@ export const TIMESHEET_LINE_FIELDS = [
     "createdOn",
 ];
 
+export const INVOICE_ANALYSIS_FIELDS = [
+    "id",
+    "invoiceDate",
+    "statusSelect",
+    "operationTypeSelect",
+    "exTaxTotal",
+    "inTaxTotal",
+    "amountRemaining",
+    "partner",
+    "saleOrder.team.name",
+];
+
 export const PROJECT_FIELDS = [
     // Identification
     "id",

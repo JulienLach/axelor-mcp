@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import {
     CLASSES,
+    INVOICE_ANALYSIS_FIELDS,
     INVOICE_FIELDS,
     JOB_POSITION_FIELDS,
     LEAD_FIELDS,
@@ -1064,6 +1065,160 @@ server.registerTool(
     async ({ id }) => {
         const invoice = await axelorGetById(CLASSES.invoice, id);
         return text(invoice ? JSON.stringify(invoice, null, 2) : `Facture ID ${id} introuvable.`);
+    },
+);
+
+// ── Analyse de la facturation ────────────────────────────────────────────────
+
+type InvoiceAnalysis = {
+    id: number;
+    invoiceDate: string | null;
+    statusSelect: number;
+    operationTypeSelect: number;
+    exTaxTotal: number | string;
+    inTaxTotal: number | string;
+    amountRemaining: number | string;
+    partner: PartnerRef;
+    "saleOrder.team.name"?: string;
+};
+
+type InvoiceGroup = {
+    key: string;
+    invoiceCount: number;
+    refundCount: number;
+    netExTax: number;
+    netInTax: number;
+    amountRemaining: number;
+};
+
+// Avoirs : 2 = avoir fournisseur, 4 = avoir client — comptés en négatif
+const REFUND_OPERATION_TYPES = [2, 4];
+
+function invoiceGroupKey(inv: InvoiceAnalysis, groupBy: "month" | "client" | "team" | "status"): string {
+    const statusLabels: Record<number, string> = { 1: "Brouillon", 2: "Validée", 3: "Ventilée", 4: "Annulée" };
+    if (groupBy === "month") return inv.invoiceDate ? inv.invoiceDate.slice(0, 7) : "inconnu";
+    if (groupBy === "client") return partnerName(inv.partner) ?? "inconnu";
+    if (groupBy === "team") return inv["saleOrder.team.name"] ?? "sans équipe";
+    return statusLabels[inv.statusSelect] ?? String(inv.statusSelect);
+}
+
+function groupInvoices(invoices: InvoiceAnalysis[], groupBy: "month" | "client" | "team" | "status"): InvoiceGroup[] {
+    const map = new Map<string, InvoiceGroup>();
+
+    for (const inv of invoices) {
+        const key = invoiceGroupKey(inv, groupBy);
+        const g = map.get(key) ?? {
+            key,
+            invoiceCount: 0,
+            refundCount: 0,
+            netExTax: 0,
+            netInTax: 0,
+            amountRemaining: 0,
+        };
+        const isRefund = REFUND_OPERATION_TYPES.includes(inv.operationTypeSelect);
+        const sign = isRefund ? -1 : 1;
+        if (isRefund) g.refundCount++;
+        else g.invoiceCount++;
+        g.netExTax += sign * (Number(inv.exTaxTotal) || 0);
+        g.netInTax += sign * (Number(inv.inTaxTotal) || 0);
+        g.amountRemaining += sign * (Number(inv.amountRemaining) || 0);
+        map.set(key, g);
+    }
+
+    const groups = Array.from(map.values());
+    return groupBy === "month"
+        ? groups.sort((a, b) => a.key.localeCompare(b.key))
+        : groups.sort((a, b) => b.netExTax - a.netExTax);
+}
+
+function formatInvoiceGroupLine(label: string, g: Omit<InvoiceGroup, "key">): string {
+    return `${label} | ${String(g.invoiceCount).padStart(5)} | ${String(g.refundCount).padStart(6)} | ${fmt(g.netExTax).padStart(14)} | ${fmt(g.netInTax).padStart(14)} | ${fmt(g.amountRemaining).padStart(14)}`;
+}
+
+server.registerTool(
+    "analyze_invoices",
+    {
+        description:
+            "Analyse agrégée de la facturation : CA facturé net (factures - avoirs) HT/TTC et reste dû, par mois/client/équipe/statut. L'équipe est celle de la commande d'origine (saleOrder.team) : une facture sans commande liée tombe dans « sans équipe ».",
+        inputSchema: {
+            groupBy: z
+                .enum(["month", "client", "team", "status"])
+                .describe(
+                    "Axe d'analyse : month (tendance mensuelle), client (top clients), team (ventilation par équipe), status (répartition par statut)",
+                ),
+            direction: z
+                .enum(["customer", "supplier"])
+                .optional()
+                .describe(
+                    "customer (défaut) = factures (3) et avoirs (4) clients ; supplier = factures (1) et avoirs (2) fournisseurs",
+                ),
+            dateFrom: z.string().optional().describe("Date de début (YYYY-MM-DD) — filtre sur invoiceDate"),
+            dateTo: z.string().optional().describe("Date de fin (YYYY-MM-DD) — filtre sur invoiceDate"),
+            statusSelect: z
+                .array(z.enum(["draft", "validated", "ventilated", "cancelled"]))
+                .optional()
+                .describe("Statuts à inclure (défaut : validated, ventilated — hors brouillons et annulées)"),
+            clientName: z.string().optional().describe("Filtrer par client / fournisseur (nom partiel)"),
+            teamName: z.string().optional().describe("Filtrer par équipe de la commande d'origine (nom partiel)"),
+            topN: z.number().optional().describe("Nombre de groupes à afficher (défaut : 20)"),
+        },
+    },
+    async ({ groupBy, direction = "customer", dateFrom, dateTo, statusSelect, clientName, teamName, topN = 20 }) => {
+        const statusMap = { draft: 1, validated: 2, ventilated: 3, cancelled: 4 };
+        const operationTypes = direction === "customer" ? [3, 4] : [1, 2];
+        const activeStatuses = statusSelect?.length ? statusSelect : (["validated", "ventilated"] as const);
+
+        const criteria: Criterion[] = [
+            { fieldName: "operationTypeSelect", operator: "in", value: operationTypes },
+            { fieldName: "statusSelect", operator: "in", value: activeStatuses.map((s) => statusMap[s]) },
+        ];
+        if (dateFrom) criteria.push({ fieldName: "invoiceDate", operator: ">=", value: dateFrom });
+        if (dateTo) criteria.push({ fieldName: "invoiceDate", operator: "<=", value: dateTo });
+        if (clientName) criteria.push({ fieldName: "partner.name", operator: "like", value: `%${clientName}%` });
+        if (teamName) criteria.push({ fieldName: "saleOrder.team.name", operator: "like", value: `%${teamName}%` });
+
+        const { data, total } = await axelorSearch(CLASSES.invoice, INVOICE_ANALYSIS_FIELDS, criteria, {
+            limit: 2000,
+            sortBy: ["invoiceDate"],
+        });
+
+        const invoices = data as InvoiceAnalysis[];
+        const allGroups = groupInvoices(invoices, groupBy);
+        const periode = dateFrom || dateTo ? `${dateFrom ?? "…"} → ${dateTo ?? "…"}` : "toutes périodes";
+        const separator = `-----|${"-".repeat(32)}|-------|--------|${"-".repeat(16)}|${"-".repeat(16)}|${"-".repeat(16)}`;
+
+        const lines: string[] = [
+            `Analyse facturation (${direction}) — groupBy: ${groupBy} | Période: ${periode}`,
+            `Statuts: ${activeStatuses.join(", ")} | ${invoices.length} pièces analysées sur ${total}`,
+            "",
+            `Rang | ${"Groupe".padEnd(30)} | Fact. | Avoirs | ${"Net HT".padStart(14)} | ${"Net TTC".padStart(14)} | ${"Reste dû".padStart(14)}`,
+            separator,
+        ];
+        allGroups.slice(0, topN).forEach((g, i) => {
+            lines.push(formatInvoiceGroupLine(`${String(i + 1).padStart(4)} | ${g.key.padEnd(30)}`, g));
+        });
+
+        // Ligne TOTAL sur l'ensemble des groupes (pas seulement topN)
+        const tot = allGroups.reduce(
+            (acc, g) => ({
+                invoiceCount: acc.invoiceCount + g.invoiceCount,
+                refundCount: acc.refundCount + g.refundCount,
+                netExTax: acc.netExTax + g.netExTax,
+                netInTax: acc.netInTax + g.netInTax,
+                amountRemaining: acc.amountRemaining + g.amountRemaining,
+            }),
+            { invoiceCount: 0, refundCount: 0, netExTax: 0, netInTax: 0, amountRemaining: 0 },
+        );
+        lines.push(separator, formatInvoiceGroupLine(`TOTAL| ${"—".padEnd(30)}`, tot));
+
+        if (invoices.length < total) {
+            lines.push(
+                "",
+                `⚠ Seules ${invoices.length} pièces sur ${total} ont été analysées (limite 2000) — affiner la période ou les filtres.`,
+            );
+        }
+
+        return text(lines.join("\n"));
     },
 );
 
