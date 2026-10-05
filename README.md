@@ -1,4 +1,4 @@
-# Axelor MCP - Connecteur Axelor pour Claude Desktop
+# Axelor MCP - Connecteur Axelor pour Claude
 
 Ce projet permet à Claude d'interroger directement votre instance Axelor : rechercher des partenaires, consulter et créer des commandes clients, etc.
 
