@@ -64,6 +64,15 @@ type Criterion =
     | { fieldName: string; operator: string; value: unknown }
     | { operator: "and" | "or"; criteria: Criterion[] };
 
+// archived est un Boolean nullable : un enregistrement jamais archivé a archived = NULL, pas false
+const NOT_ARCHIVED: Criterion = {
+    operator: "or",
+    criteria: [
+        { fieldName: "archived", operator: "isNull", value: null },
+        { fieldName: "archived", operator: "=", value: false },
+    ],
+};
+
 async function axelorSearch(
     className: string,
     fields: string[],
@@ -613,7 +622,7 @@ server.registerTool(
             criteria.push({ fieldName: "leadScoringSelect", operator: "=", value: scoringMap[leadScoringSelect] });
         if (isConverted !== undefined) criteria.push({ fieldName: "isConverted", operator: "=", value: isConverted });
         if (isNurturing !== undefined) criteria.push({ fieldName: "isNurturing", operator: "=", value: isNurturing });
-        if (!archived) criteria.push({ fieldName: "archived", operator: "=", value: false });
+        if (!archived) criteria.push(NOT_ARCHIVED);
 
         if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
 
@@ -732,7 +741,7 @@ server.registerTool(
         if (name) criteria.push({ fieldName: "name", operator: "like", value: `%${name}%` });
         if (partnerName) criteria.push({ fieldName: "partner.name", operator: "like", value: `%${partnerName}%` });
         if (userName) criteria.push({ fieldName: "user.name", operator: "like", value: `%${userName}%` });
-        if (!archived) criteria.push({ fieldName: "archived", operator: "=", value: false });
+        if (!archived) criteria.push(NOT_ARCHIVED);
         if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
 
         const { data, total } = await axelorSearch(CLASSES.opportunity, OPPORTUNITY_FIELDS, criteria, {
@@ -1197,7 +1206,7 @@ server.registerTool(
         if (dateTo) criteria.push({ fieldName: "expectedCloseDate", operator: "<=", value: dateTo });
         if (partnerName) criteria.push({ fieldName: "partner.name", operator: "like", value: `%${partnerName}%` });
         if (userName) criteria.push({ fieldName: "user.name", operator: "like", value: `%${userName}%` });
-        if (!includeArchived) criteria.push({ fieldName: "archived", operator: "=", value: false });
+        if (!includeArchived) criteria.push(NOT_ARCHIVED);
         if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
 
         const { data, total } = await axelorSearch(CLASSES.opportunity, OPPORTUNITY_ANALYSIS_FIELDS, criteria, {
@@ -1298,7 +1307,7 @@ server.registerTool(
         if (isOverdue) criteria.push({ fieldName: "toDate", operator: "<", value: today });
         if (isBusinessProject !== undefined)
             criteria.push({ fieldName: "isBusinessProject", operator: "=", value: isBusinessProject });
-        if (!archived) criteria.push({ fieldName: "archived", operator: "=", value: false });
+        if (!archived) criteria.push(NOT_ARCHIVED);
         if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
 
         const { data, total } = await axelorSearch(CLASSES.project, PROJECT_FIELDS, criteria, {
@@ -1424,7 +1433,7 @@ server.registerTool(
         if (isOverdue) criteria.push({ fieldName: "toDate", operator: "<", value: today });
         if (isBusinessProject !== undefined)
             criteria.push({ fieldName: "isBusinessProject", operator: "=", value: isBusinessProject });
-        if (!includeArchived) criteria.push({ fieldName: "archived", operator: "=", value: false });
+        if (!includeArchived) criteria.push(NOT_ARCHIVED);
         if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
 
         const { data, total } = await axelorSearch(CLASSES.project, PROJECT_ANALYSIS_FIELDS, criteria, {
@@ -1933,7 +1942,7 @@ server.registerTool(
             criteria.push({ fieldName: "companyDepartment.name", operator: "like", value: `%${departmentName}%` });
         if (contractTypeName)
             criteria.push({ fieldName: "contractType.name", operator: "like", value: `%${contractTypeName}%` });
-        if (!archived) criteria.push({ fieldName: "archived", operator: "=", value: false });
+        if (!archived) criteria.push(NOT_ARCHIVED);
         if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
 
         const { data, total } = await axelorSearch(CLASSES.jobPosition, JOB_POSITION_FIELDS, criteria, {
@@ -2053,7 +2062,7 @@ server.registerTool(
         const categoryMap = { non_bloquant: 1, bloquant: 2, fonctionnel: 3 };
         const criteria: Criterion[] = [];
 
-        if (!includeArchived) criteria.push({ fieldName: "archived", operator: "=", value: false });
+        if (!includeArchived) criteria.push(NOT_ARCHIVED);
         if (dateFrom) criteria.push({ fieldName: "date", operator: ">=", value: `${dateFrom}T00:00:00Z` });
         if (dateTo) criteria.push({ fieldName: "date", operator: "<=", value: `${dateTo}T23:59:59Z` });
         if (category) criteria.push({ fieldName: "categorySelect", operator: "=", value: categoryMap[category] });
@@ -2231,7 +2240,7 @@ server.registerTool(
     },
     async ({ dateFrom, dateTo, category, origin, topN = 10 }) => {
         const categoryMap = { non_bloquant: 1, bloquant: 2, fonctionnel: 3 };
-        const criteria: Criterion[] = [{ fieldName: "archived", operator: "=", value: false }];
+        const criteria: Criterion[] = [NOT_ARCHIVED];
 
         if (dateFrom) criteria.push({ fieldName: "date", operator: ">=", value: `${dateFrom}T00:00:00Z` });
         if (dateTo) criteria.push({ fieldName: "date", operator: "<=", value: `${dateTo}T23:59:59Z` });
