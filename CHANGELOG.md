@@ -23,3 +23,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - README: update procedure and documentation of the new tools.
 - `axelor-analyser` skill: relation rules (namecolumn), the nullable `archived` pitfall, the `Team` model, `Project` and `Invoice` trees.
+
+## [1.0.0] - 2026-08-25
+
+Initial release.
+
+### Added
+
+- **Partners**: `search_partners`, `get_partner`
+- **Products**: `search_products`, `analyze_products`
+- **Sales**: `search_sale_orders`, `get_sale_order`, `create_sale_order`, `analyze_sales`
+- **CRM leads**: `search_leads`, `get_lead`, `create_lead`
+- **CRM opportunities**: `search_opportunities`, `get_opportunity`, `create_opportunity`, `analyze_opportunities`
+- **Invoices**: `search_invoices`, `get_invoice`
+- **Accounting**: `search_move_lines` (read-only)
+- **Projects**: `search_projects`, `analyze_projects`, `get_project_tasks_summary`
+- **Timesheets**: `search_timesheets`, `get_timesheet`, `summary_timesheet_by_project`
+- **HR**: `search_job_positions`, `get_job_position`, `create_job_position`
+- **Error logs**: `search_tracebacks`, `get_traceback`, `analyze_tracebacks`
+- Confirmation guard on all `create_*` tools: a preview is returned first, and the record is only created when the tool is called again with `confirm=true`.
