@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.2] - 2026-10-05
+
+### Changed
+
+- **TypeScript** upgraded from 6.0.3 to 7.0.2.
+- **`@types/node`** upgraded from ^20 to ^24, to match the Node.js 24 LTS runtime required by the README.
+- **`tsx`** upgraded from 4.21.0 to 4.23.15.
+
 ## [1.0.1] - 2026-10-05
 
 ### Added
