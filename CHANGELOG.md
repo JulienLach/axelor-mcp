@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.3] - 2026-10-05
+
+### Fixed
+
+- **`search_sale_orders`**: the `deliveryState` and `invoicingState` filters sent 0/1/2 while AOS codes these states 1/2/3, so `deliveryState: not_delivered` returned no order at all. Contributed by Georges Carlos.
+- **Relation labels**: the REST API returns only the target model's name column for a many-to-one, which is `fullName` for `User`, `Project`, `ProjectTask` and `Product` too, not just `Partner`. Grouping by salesperson or assignee put everything under "non assigné", and timesheet, task and traceback labels were empty. A shared `refName()` helper now reads every relation label. Contributed by Georges Carlos.
+
+### Documentation
+
+- `axelor-analyser` skill: delivery and invoicing states start at 1, and the list of models whose relations return `fullName`.
+
 ## [1.0.2] - 2026-10-05
 
 ### Changed
