@@ -107,6 +107,7 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 
 - `search_invoices` — _"Factures impayées du client Dupont"_, _"Factures émises en janvier 2026"_, _"Avoirs clients du trimestre"_ (filtres : client, numéro, statut, type, période, échéance, unpaidOnly)
 - `get_invoice` — _"Montre-moi le détail de la facture FAC-00123"_
+- `analyze_invoices` — _"CA facturé net par équipe ce mois-ci"_, _"Tendance mensuelle de la facturation sur l'exercice"_ (groupBy : month / client / team / status ; factures - avoirs ; filtres : période, statut, client, équipe, client/fournisseur)
 
 **Écritures comptables**
 
@@ -114,7 +115,7 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 
 **Analyse des ventes**
 
-- `analyze_sales` — _"Tendance mensuelle de mon CA sur les 3 derniers mois"_, _"Top clients par CA sur 2025"_, _"Performance par commercial ce trimestre"_ (groupBy : month / client / salesperson / status ; filtres : période, statut, client, commercial)
+- `analyze_sales` — _"Tendance mensuelle de mon CA sur les 3 derniers mois"_, _"Top clients par CA sur 2025"_, _"Performance par commercial ce trimestre"_, _"Devis et commandes par équipe ce mois-ci"_ (groupBy : month / client / salesperson / team / status ; filtres : période, statut, client, commercial, équipe)
 - `analyze_products` — _"Top 15 produits par CA sur le dernier trimestre"_, _"Répartition mensuelle des ventes par famille de produits"_ (groupBy : product / family / category ; filtres : période, client, topN)
 
 **Opportunités CRM**
