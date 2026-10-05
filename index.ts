@@ -1276,8 +1276,7 @@ server.registerTool(
                     { fieldName: "account.code", operator: "like", value: `%${accountName}%` },
                 ],
             });
-        if (journalName)
-            criteria.push({ fieldName: "move.journal.name", operator: "like", value: `%${journalName}%` });
+        if (journalName) criteria.push({ fieldName: "move.journal.name", operator: "like", value: `%${journalName}%` });
         if (unpaidOnly !== false) criteria.push({ fieldName: "amountRemaining", operator: ">", value: 0 });
 
         const { data, total } = await axelorSearch(CLASSES.moveLine, MOVE_LINE_FIELDS, criteria, {
@@ -2238,7 +2237,17 @@ server.registerTool(
             offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
         },
     },
-    async ({ dateFrom, dateTo, category, origin, exception, userName, includeArchived = false, limit = 20, offset = 0 }) => {
+    async ({
+        dateFrom,
+        dateTo,
+        category,
+        origin,
+        exception,
+        userName,
+        includeArchived = false,
+        limit = 20,
+        offset = 0,
+    }) => {
         const categoryMap = { non_bloquant: 1, bloquant: 2, fonctionnel: 3 };
         const criteria: Criterion[] = [];
 
@@ -2260,7 +2269,10 @@ server.registerTool(
 
         const categoryLabel: Record<number, string> = { 1: "Non bloquant", 2: "Bloquant", 3: "Fonctionnel" };
         const rows = (data as Record<string, unknown>[]).map((t) => {
-            const cat = typeof t.categorySelect === "number" ? (categoryLabel[t.categorySelect] ?? `#${t.categorySelect}`) : "?";
+            const cat =
+                typeof t.categorySelect === "number"
+                    ? (categoryLabel[t.categorySelect] ?? `#${t.categorySelect}`)
+                    : "?";
             const user = (t.internalUser as Record<string, unknown> | null)?.name ?? "—";
             const date = typeof t.date === "string" ? t.date.slice(0, 10) : "—";
             return `[${t.id}] ${date} | ${cat} | ${t.origin ?? "—"} | ${t.exception ?? "—"} | ${t.message ?? t.error ?? "—"} | user: ${user}`;
@@ -2276,11 +2288,24 @@ server.registerTool(
 
 // Packages framework à filtrer lors de l'analyse de stack trace
 const FRAMEWORK_PREFIXES = [
-    "java.", "javax.", "sun.", "com.sun.", "jdk.",
-    "org.springframework.", "org.hibernate.", "org.jboss.",
-    "io.netty.", "org.apache.", "ch.qos.", "org.slf4j.",
-    "com.google.", "org.reflections.", "org.codehaus.",
-    "com.zaxxer.", "org.postgresql.", "org.mariadb.",
+    "java.",
+    "javax.",
+    "sun.",
+    "com.sun.",
+    "jdk.",
+    "org.springframework.",
+    "org.hibernate.",
+    "org.jboss.",
+    "io.netty.",
+    "org.apache.",
+    "ch.qos.",
+    "org.slf4j.",
+    "com.google.",
+    "org.reflections.",
+    "org.codehaus.",
+    "com.zaxxer.",
+    "org.postgresql.",
+    "org.mariadb.",
 ];
 
 function isAppFrame(frame: string): boolean {
@@ -2293,7 +2318,10 @@ function parseStackTrace(trace: string): {
     firstAppFrame: string | null;
     allFrames: string[];
 } {
-    const lines = trace.split("\n").map((l) => l.trim()).filter(Boolean);
+    const lines = trace
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean);
     const exceptionChain: { type: string; message: string }[] = [];
     const appFrames: string[] = [];
     const allFrames: string[] = [];
@@ -2339,7 +2367,10 @@ server.registerTool(
         if (!item) return text(`Aucune anomalie trouvée pour l'ID ${id}.`);
 
         const categoryLabel: Record<number, string> = { 1: "Non bloquant", 2: "Bloquant", 3: "Fonctionnel" };
-        const cat = typeof item.categorySelect === "number" ? (categoryLabel[item.categorySelect] ?? `#${item.categorySelect}`) : "?";
+        const cat =
+            typeof item.categorySelect === "number"
+                ? (categoryLabel[item.categorySelect] ?? `#${item.categorySelect}`)
+                : "?";
         const user = (item.internalUser as Record<string, unknown> | null)?.name ?? "—";
 
         const lines: string[] = [
@@ -2447,9 +2478,11 @@ server.registerTool(
             const fqn = typeof item.exception === "string" ? item.exception : "Inconnu";
             const shortName = fqn.includes(".") ? fqn.split(".").pop()! : fqn;
             const dateStr = typeof item.date === "string" ? item.date.slice(0, 10) : "inconnu";
-            const msg = typeof item.message === "string" ? item.message : (typeof item.error === "string" ? item.error : "");
+            const msg =
+                typeof item.message === "string" ? item.message : typeof item.error === "string" ? item.error : "";
 
-            if (!byException[shortName]) byException[shortName] = { count: 0, lastDate: dateStr, sample: msg.slice(0, 120) };
+            if (!byException[shortName])
+                byException[shortName] = { count: 0, lastDate: dateStr, sample: msg.slice(0, 120) };
             byException[shortName].count++;
             if (dateStr > byException[shortName].lastDate) byException[shortName].lastDate = dateStr;
 
@@ -2471,7 +2504,9 @@ server.registerTool(
             .sort((a, b) => b[1] - a[1])
             .slice(0, topN);
 
-        const sortedDays = Object.entries(byDay).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 14);
+        const sortedDays = Object.entries(byDay)
+            .sort((a, b) => b[0].localeCompare(a[0]))
+            .slice(0, 14);
 
         const lines: string[] = [
             `══ Analyse anomalies ═══════════════════════════════════════════`,
@@ -2482,7 +2517,9 @@ server.registerTool(
         ];
 
         topExceptions.forEach(([name, stats], i) => {
-            lines.push(`  ${String(i + 1).padStart(2)}. ${name.padEnd(50)} ×${stats.count}  (dernière: ${stats.lastDate})`);
+            lines.push(
+                `  ${String(i + 1).padStart(2)}. ${name.padEnd(50)} ×${stats.count}  (dernière: ${stats.lastDate})`,
+            );
             if (stats.sample) lines.push(`      ex: ${stats.sample}`);
         });
 
