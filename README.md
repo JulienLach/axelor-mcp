@@ -11,6 +11,7 @@ Ce projet permet à Claude d'interroger directement votre instance Axelor : rech
 ## Table des matières
 
 - [Installation Windows](#installation-windows)
+- [Mise à jour](#mise-à-jour)
 - [Outils disponibles](#outils-disponibles)
 
 ---
@@ -81,6 +82,29 @@ Y ajouter le bloc suivant en remplaçant `<NomUtilisateur>` par le nom de votre 
 ```
 
 Fermer complètement Claude Desktop (clic droit sur l'icône dans la barre des tâches → quitter), puis le redémarrer. Le serveur MCP Axelor devrait se lancer automatiquement.
+
+---
+
+## Mise à jour
+
+Claude Desktop exécute la version compilée du projet (`dist/index.js`). Pour récupérer une nouvelle version, il faut donc télécharger les modifications **puis** recompiler.
+
+Ouvrir un terminal dans le dossier du projet :
+
+```bash
+cd C:\Users\<NomUtilisateur>\Documents\axelor-mcp
+git pull origin main
+npm install
+npm run build
+```
+
+- `git pull origin main` récupère la dernière version du code depuis GitHub.
+- `npm install` met à jour les dépendances si elles ont changé (sans effet sinon).
+- `npm run build` recompile le projet dans le dossier `dist/`.
+
+Le fichier `.env` n'est pas versionné : il est conservé tel quel lors de la mise à jour.
+
+Fermer complètement Claude Desktop (clic droit sur l'icône dans la barre des tâches → quitter), puis le redémarrer pour charger la nouvelle version.
 
 ---
 
