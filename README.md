@@ -1,18 +1,23 @@
 # Axelor MCP - Connecteur Axelor pour Claude
 
-Ce projet permet à Claude d'interroger directement votre instance Axelor : rechercher des partenaires, consulter et créer des commandes clients, etc.
+Ce serveur MCP connecte Claude à Axelor Open Suite. Vous posez vos questions en langage naturel, et Claude interroge l'ERP pour rechercher les données, les croiser et les analyser : chiffre d'affaires, marges, facturation, pipeline commercial, avancement des projets, temps passé, anomalies techniques…
 
-## Aperçu
-
-![Serveur MCP Axelor dans Claude Desktop](assets/axelor-mcp-claude-desktop.png)
-
-![Exemple de création de piste CRM via Claude](assets/axelor-mcp-claude-desktop-2.png)
+Il couvre les principaux modules d'Axelor (ventes, facturation, comptabilité, CRM, projets, temps, RH) et peut aussi créer des enregistrements, toujours après confirmation.
 
 ## Table des matières
 
+- [Fonctionnement](#fonctionnement)
 - [Installation Windows](#installation-windows)
 - [Mise à jour](#mise-à-jour)
 - [Outils disponibles](#outils-disponibles)
+
+---
+
+## Fonctionnement
+
+Claude lance le serveur MCP comme un sous-processus Node.js et dialogue avec lui en JSON-RPC sur stdin/stdout, sans port réseau. Quand Claude appelle un outil, le serveur valide les arguments, interroge l'API REST d'Axelor avec les identifiants du fichier `.env`, puis renvoie le résultat à Claude.
+
+![Architecture du serveur MCP Axelor](assets/Axelor%20MCP%20-%20Architecture.png)
 
 ---
 
@@ -166,8 +171,10 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 **Feuilles de temps**
 
 - `search_timesheets` — _"Feuilles de temps en attente de validation"_, _"Feuilles de temps de Dupont sur janvier 2026"_ (filtres : employé, statut, période)
-- `get_timesheet` — _"Montre-moi le détail de la feuille de temps de Dupont avec toutes ses lignes"_
-- `summary_timesheet_by_project` — _"Temps passé par projet cette semaine"_, _"Heures imputées par employé en mars 2026"_, _"Récap du temps passé par projet sur le projet X en février"_ (groupBy : project / employee ; filtres : période obligatoire, employé, projet)
+- `get_timesheet` — _"Montre-moi la feuille de temps de Dupont de la semaine dernière"_ (pour le détail des heures saisies : `search_timesheet_lines`)
+- `summary_timesheet_by_project` — _"Temps passé par projet cette semaine"_, _"Heures imputées par employé en mars 2026"_, _"Récap du temps passé par projet sur le projet X en février"_ (groupBy : project / employee ; filtres : période obligatoire, employé, projet, statut de feuille — défaut : hors feuilles refusées et annulées)
+- `search_timesheet_lines` — _"Détail des heures saisies par Dupont la semaine dernière"_, _"Lignes de temps à facturer non facturées sur le projet X"_ (date, employé, projet, tâche, activité, heures, commentaire, facturation ; filtres : employé, projet, période, à facturer, facturé, statut de feuille)
+- `analyze_unbilled_time` — _"Quel est l'en-cours de temps non facturé par client ?"_, _"En-cours par équipe à fin septembre"_ (temps à facturer pas encore facturé, en heures et valorisé HT ; groupBy : project / client / team / employee ; filtres : période, client, projet, employé, équipe)
 
 **Postes à pourvoir (RH)**
 
