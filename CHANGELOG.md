@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.4] - 2026-10-05
+
+### Added
+
+- **`analyze_unbilled_time`**: unbilled time (work in progress). Timesheet lines to invoice that are not invoiced yet, in hours and valued excl. tax (sales and cost), grouped by project, client, team or employee.
+- **`search_timesheet_lines`**: detailed list of timesheet lines (date, employee, project, task, activity, hours, comment, invoicing status and valuation), with pagination.
+
+### Changed
+
+- **`summary_timesheet_by_project`**: new `statusSelect` filter. By default, lines from refused and cancelled timesheets are no longer counted.
+- **Timesheet fields**: `search_timesheets` now returns `timeLoggingPreferenceSelect`, and timesheet lines include the employee, activity, extra hours flag, invoicing fields and valuation.
+- **`get_timesheet`**: its description now points to `search_timesheet_lines` for the detail of the logged lines.
+
+### Fixed
+
+- **`summary_timesheet_by_project` (groupBy employee)**: every hour ended up under "Non assigné", because the employee was read from a nested path the API does not return. It is now read from the line's own `employee` field.
+- **`summary_timesheet_by_project` (groupBy employee)**: the "Projets concernés" column listed tasks instead of projects.
+- **`search_timesheets`**: the cancelled status (5) can now be used as a filter.
+
+### Documentation
+
+- README: examples for the new timesheet tools.
+- `axelor-analyser` skill: verified `TimesheetLine` model (durations, invoicing fields, unbilled time definition) and timesheet statuses.
+
 ## [1.0.3] - 2026-10-05
 
 ### Fixed
