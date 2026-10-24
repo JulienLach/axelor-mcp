@@ -2784,7 +2784,9 @@ Hors dashboard, uniquement sur demande explicite (documentation technique) : \`s
 Syntaxe
 - \`xychart\` : mets toujours les étiquettes de \`x-axis\` entre guillemets (\`x-axis ["jan", "fév"]\`), une étiquette accentuée sans guillemets est refusée.
 - \`sankey\` : mets entre guillemets doubles un nom qui contient une virgule (\`CA,"Dupont, Fils",1200\`).
-- \`quadrantChart\` : écris la borne haute \`1\`, jamais \`1.0\` ni \`1.00\` (\`Point: [1, 0.5]\`), sinon le point est refusé (« Lexical error »).`;
+- \`quadrantChart\` : écris la borne haute \`1\`, jamais \`1.0\` ni \`1.00\` (\`Point: [1, 0.5]\`), sinon le point est refusé (« Lexical error »).
+- \`quadrantChart\` : Pele n'écarte pas les libellés de points confondus. Évite deux points aux mêmes coordonnées (fréquent quand plusieurs valeurs à 0 ou au-delà de 1 sont ramenées en bord de cadre) : regroupe-les en un seul point ou cite-les dans le texte plutôt que dans le diagramme.
+- \`gantt\` : \`axisFormat %b\` affiche les mois en anglais (« Jan 26 ») ; utilise un format numérique comme \`axisFormat %m/%y\`.`;
 
 server.registerTool(
     "render_diagram",
