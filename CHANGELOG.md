@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.5] - 2026-10-24
+
+### Added
+
+- **`render_diagram`**: renders a Mermaid-syntax diagram to a self-contained SVG with the [Pele](https://pele.run/) library. Rendering happens server-side, so dashboard artifacts don't depend on a CDN script that may be blocked. The tool description holds a catalog of every Pele diagram type with when to use it on Axelor data (`pie`, `xychart`, `sankey`, `treemap-beta`, `gantt`, `timeline`, `kanban`…), the types kept out of dashboards, and syntax pitfalls found while testing (quoted `xychart` labels, quoted `sankey` names containing a comma). A syntax error returns the faulty line so the source can be fixed.
+
+### Changed
+
+- **`dashboard_guidelines` prompt**: every summary dashboard now includes at least one Pele diagram, picked from the `render_diagram` catalog.
+- **Dependencies**: refreshed, including `@modelcontextprotocol/sdk` 1.32.2.
+
+### Security
+
+- **`zod` upgraded to 4.6.7** ([GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)): earlier versions could exhaust memory while validating oversized constrained collections. No 3.x release is patched. The MCP SDK supports zod v4 and the tool input schemas sent to the client are unchanged.
+
+### Documentation
+
+- README: refreshed Claude Desktop setup and added the Claude Code restart step.
+
 ## [1.0.4] - 2026-10-05
 
 ### Added
