@@ -1,6 +1,6 @@
 {
     "name": "axelor-mcp",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "type": "module",
     "scripts": {
         "build": "tsc",
@@ -9,6 +9,7 @@
     },
     "dependencies": {
         "@modelcontextprotocol/sdk": "^1.0.0",
+        "pele": "^1.9.0",
         "zod": "^3.22.0"
     },
     "devDependencies": {

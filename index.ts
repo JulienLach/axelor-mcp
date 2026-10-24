@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { PeleError, render } from "pele";
 import { z } from "zod";
 import {
     CLASSES,
@@ -2750,6 +2751,58 @@ server.registerTool(
     },
 );
 
+// ── Diagrammes ────────────────────────────────────────────────────────────────
+
+// Seul tool qui n'interroge pas Axelor : il met en forme des données déjà obtenues par les autres tools.
+// Le rendu se fait ici plutôt que dans l'artefact, où un script chargé depuis un CDN peut être bloqué.
+
+// Catalogue des types de https://pele.run/examples, classés selon leur utilité pour un dashboard Axelor.
+const DIAGRAM_TYPES = `Choisis le type (mot-clé de la première ligne) selon ce que le diagramme doit montrer :
+
+Chiffres d'un dashboard
+- \`pie\` : part de chaque groupe dans un total (CA par équipe, opportunités par statut). 7 parts au plus.
+- \`xychart\` : évolution dans le temps avec \`bar\` et/ou \`line\` (CA ou facturation par mois, groupBy "month"). \`xychart horizontal\` pour un classement (top clients).
+- \`sankey\` : un total réparti vers ses groupes, issu d'un seul tool (CA facturé → équipes, pipeline → statuts). Jamais de chaîne opportunités → devis → commandes → factures : ces étapes ne sont pas reliées dans les données et le diagramme suggérerait un taux de conversion inexistant.
+- \`treemap-beta\` : répartition sur beaucoup de groupes (plus de 7, ex : CA par produit ou par client), imbriquée seulement si les données fournissent la hiérarchie.
+- \`quadrantChart\` : éléments placés sur deux axes ramenés entre 0 et 1 (projets : avancement × consommation ; opportunités : probabilité × montant rapporté au plus gros).
+- \`radar-beta\` : 2 à 5 entités comparées sur plusieurs indicateurs de même échelle, par exemple des pourcentages (équipes, responsables).
+
+Temps et suivi
+- \`gantt\` : planning des projets à partir de \`fromDate\` / \`toDate\` de \`search_projects\`, retards marqués \`crit\`, 15 projets au plus.
+- \`timeline\` : échéances à venir (fins de projet, closings prévus de \`search_opportunities\`), regroupées par mois avec \`section\`.
+- \`kanban\` : cartes rangées par colonne de statut (opportunités ou projets d'un responsable), 20 cartes au plus.
+
+Processus et causes
+- \`flowchart\` : enchaînement d'étapes ou de décisions.
+- \`swimlane-beta\` : processus réparti par acteur ou service (commercial, compta, production).
+- \`stateDiagram-v2\` : cycle de vie des statuts d'un document (devis, facture, projet).
+- \`ishikawa-beta\` : causes d'un problème par catégorie (ex : anomalies d'\`analyze_tracebacks\` classées par module).
+- \`mindmap\` : synthèse qualitative en arborescence (points d'attention).
+
+Hors dashboard, uniquement sur demande explicite (documentation technique) : \`sequenceDiagram\`, \`classDiagram\`, \`erDiagram\`, \`C4Context\` / \`C4Container\` / \`C4Component\`, \`architecture-beta\`, \`block\`, \`gitGraph\`, \`packet\`, \`requirementDiagram\`, \`usecase-beta\`, \`journey\`, \`venn-beta\`, \`wardley-beta\`, \`cynefin-beta\`, \`eventmodeling\`, \`agentflow-beta\`, \`railroad-beta\`, \`treeView-beta\`.
+
+Syntaxe
+- \`xychart\` : mets toujours les étiquettes de \`x-axis\` entre guillemets (\`x-axis ["jan", "fév"]\`), une étiquette accentuée sans guillemets est refusée.
+- \`sankey\` : mets entre guillemets doubles un nom qui contient une virgule (\`CA,"Dupont, Fils",1200\`).`;
+
+server.registerTool(
+    "render_diagram",
+    {
+        description: `Rendre un diagramme en syntaxe Mermaid en SVG autonome avec la librairie Pele. À utiliser systématiquement : tout dashboard de synthèse sur des données Axelor contient au moins un diagramme rendu par ce tool. Insérer le SVG renvoyé tel quel dans le dashboard, sans charger Pele ni Mermaid par un script. Les valeurs doivent provenir des autres tools.\n\n${DIAGRAM_TYPES}`,
+        inputSchema: {
+            source: z.string().describe("Source du diagramme en syntaxe Mermaid"),
+        },
+    },
+    async ({ source }) => {
+        try {
+            return text(render(source).svg);
+        } catch (e) {
+            if (!(e instanceof PeleError)) throw e;
+            return { ...text(`Erreur de syntaxe (ligne ${e.line}) : ${e.message}\nCorrige la source et rappelle le tool.`), isError: true };
+        }
+    },
+);
+
 // ── Prompts ───────────────────────────────────────────────────────────────────
 
 const DASHBOARD_GUIDELINES = `# Guide pour construire un dashboard à partir d'Axelor
@@ -2780,7 +2833,14 @@ Tu construis un dashboard à partir des données de l'ERP Axelor, via les tools 
 - Reprends la ligne TOTAL fournie par les tools plutôt que de recalculer à partir des groupes affichés (le top N n'est pas le total).
 - Indique la date de génération du dashboard.
 
-## 4. Être honnête sur les données
+## 4. Diagrammes Pele (obligatoires)
+- Tout dashboard de synthèse contient au moins un diagramme rendu par \`render_diagram\`, en plus des graphiques et tableaux habituels.
+- Insère le SVG renvoyé tel quel dans l'artefact (en React : \`dangerouslySetInnerHTML\`). Ne charge ni Pele ni Mermaid par un script : le SVG est autonome. Pour un thème sombre, définis les variables CSS \`--pele-bg\`, \`--pele-fg\`, \`--pele-line\` et \`--pele-muted\` sur son conteneur.
+- Choisis le type dans le catalogue de la description de \`render_diagram\`, selon ce que chaque diagramme doit montrer. Varie les types quand le dashboard en contient plusieurs.
+- Les valeurs du diagramme suivent les mêmes règles que le reste : issues des tools, sur la même période, sans estimation.
+- Si aucune donnée ne permet un diagramme pertinent, dis-le dans la note de méthodologie plutôt que d'en forcer un.
+
+## 5. Être honnête sur les données
 - N'invente, n'estime ni n'extrapole aucun chiffre. Si une donnée manque, affiche-la comme indisponible et explique pourquoi.
 - Si un tool signale une limite atteinte (« ⚠ Seules N … sur M »), réduis la période ou ajoute des filtres plutôt que d'afficher un total partiel.
 - Signale les groupes « inconnu », « sans équipe » ou « non assigné » s'ils pèsent lourd : ils révèlent un défaut de saisie dans l'ERP.
