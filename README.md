@@ -202,3 +202,20 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 
 - `dashboard_guidelines` (prompt) - guide de bonnes pratiques à lancer avant de demander un dashboard : tools à utiliser pour chaque indicateur, périodes explicites, montants HT, aucun chiffre inventé, note de méthodologie. Dans Claude Desktop, il se lance depuis le bouton « + » de la zone de message, parmi les options du connecteur Axelor. Paramètre optionnel : le dashboard souhaité, par exemple _"CA et facturation par équipe sur le mois"_.
 - `render_diagram` - _"Ajoute un gantt des projets en retard"_, _"Montre la répartition du CA facturé par équipe en sankey"_ - transforme un diagramme en syntaxe Mermaid en image SVG avec la librairie [Pele](https://pele.run/), insérée directement dans le dashboard. Claude l'utilise de lui-même : tout dashboard de synthèse contient au moins un diagramme. Il choisit le type selon les données (camembert, évolution mensuelle, sankey, treemap, gantt, timeline, kanban…) ; les chiffres viennent toujours des autres outils.
+
+Exemples de diagrammes rendus par `render_diagram` (données fictives) :
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/pele/commandes-par-semaine.svg" alt="Commandes confirmées par semaine, avec la moyenne des semaines précédentes"><br><sub><code>xychart</code> - commandes confirmées par semaine et moyenne des semaines précédentes</sub></td>
+    <td width="50%"><img src="assets/pele/activite-sankey.svg" alt="Activité de la semaine répartie entre commandes et devis, puis par client"><br><sub><code>sankey</code> - activité de la semaine, des commandes et devis jusqu'aux clients</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/pele/ca-par-equipe.svg" alt="CA facturé de l'année par équipe"><br><sub><code>treemap-beta</code> - CA facturé de l'année par équipe</sub></td>
+    <td><img src="assets/pele/profil-clients.svg" alt="Profil des principaux clients en pourcentage"><br><sub><code>radar-beta</code> - profil des principaux clients : part de l'activité, du commandé, du devisé et des documents</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/pele/opportunites-quadrant.svg" alt="Opportunités selon leur montant et leur probabilité"><br><sub><code>quadrantChart</code> - opportunités ouvertes selon leur montant et leur probabilité</sub></td>
+    <td><img src="assets/pele/projets-en-retard.svg" alt="Planning des projets dont la date de fin est dépassée"><br><sub><code>gantt</code> - planning des projets dont la date de fin est dépassée</sub></td>
+  </tr>
+</table>
