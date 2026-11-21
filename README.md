@@ -66,6 +66,10 @@ AXELOR_USERNAME=identifiant_client
 AXELOR_PASSWORD=mot_de_passe_client
 ```
 
+> Pour limiter les droits du MCP, créer dans Axelor un utilisateur spécifique avec uniquement les droits nécessaires, et mettre ses identifiants dans le `.env`.
+>
+> **Pas d'OAuth :** l'API REST d'Axelor n'accepte que l'identifiant et le mot de passe. Son OAuth ne sert qu'à la connexion dans le navigateur.
+
 ### 4. Connecter à Claude Desktop
 
 Dans Claude Desktop, ouvrir les paramètres (menu ☰ en haut à gauche → **Fichier → Paramètres**), puis l'onglet **Développeur** et cliquer sur **Modifier la config**. Cela ouvre le fichier de configuration `claude_desktop_config.json` (situé dans `%APPDATA%\Claude\`).
