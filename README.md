@@ -131,7 +131,7 @@ Redémarrer ensuite Claude pour charger la nouvelle version :
 
 Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va les interpréter. Exemples :
 
-> Les outils de création (`create_*`) affichent d'abord un aperçu : rien n'est créé dans Axelor tant que vous n'avez pas confirmé. Les identifiants qu'ils attendent (commercial, source, étape d'opportunité, devise, société…) sont retrouvés par Claude avec `list_reference`.
+> Les outils de création (`create_*`) et de modification (`update_*`) affichent d'abord un aperçu : rien n'est écrit dans Axelor tant que vous n'avez pas confirmé. Les modifications montrent chaque champ en « avant → après » et sont refusées si quelqu'un a modifié la fiche entre l'aperçu et la confirmation. Les identifiants qu'ils attendent (commercial, source, étape d'opportunité, devise, société…) sont retrouvés par Claude avec `list_reference`.
 
 **Référentiels**
 
@@ -175,6 +175,7 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 - `search_opportunities` - _"Liste les opportunités du client Dupont"_, _"Opportunités suivies par Marie"_, _"Opportunités de plus de 10 k€ qui doivent se signer ce mois-ci"_ (filtres : nom, client, responsable, étape de vente, montant min/max, date de closing prévue, archivé, pagination)
 - `get_opportunity` - _"Détails de l'opportunité Structure métallique Tuyauterie & Caux"_
 - `create_opportunity` - _"Crée une opportunité de 15 000 € pour le prospect Martin avec 60 % de probabilité"_
+- `update_opportunity` - _"Passe l'opportunité Refonte site ABC en négociation à 60 %"_, _"Réaffecte cette opportunité à Paul"_, _"Repousse la date de closing à fin janvier"_ (étape, montant, probabilité, date de closing, responsable, motif de perte)
 - `analyze_opportunities` - _"État du pipeline par étape de vente"_, _"Pipeline pondéré par commercial pour les closings du trimestre"_, _"Quelles sources apportent le plus d'opportunités ?"_ (groupBy : status / salesperson / source / month ; montant total et pondéré par la probabilité ; filtres : période de closing prévue, client, commercial)
 
 **Pistes CRM**
@@ -183,6 +184,7 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 - `search_events` - _"Mes relances en retard"_, _"Quand a-t-on eu Dupont pour la dernière fois ?"_, _"Mes rendez-vous de la semaine prochaine"_ (appels, rendez-vous, tâches, notes ; filtres : type, statut, client, responsable, période, overdueOnly, pagination)
 - `get_lead` - _"Détails de la piste Jean Dupont chez ABC"_
 - `create_lead` - _"Crée une piste pour Jean Dupont de la société ABC, email jean@abc.fr"_
+- `update_lead` - _"Passe la piste Jean Dupont en chaud"_, _"Réaffecte cette piste à Marie"_ (statut, scoring, responsable, date de contact, motif de perte)
 
 **Projets**
 

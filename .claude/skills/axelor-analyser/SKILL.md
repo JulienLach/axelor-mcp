@@ -44,6 +44,18 @@ POST /ws/rest/{className}/search
 GET /ws/rest/{className}/{id}
 ```
 
+### Mise à jour
+
+```
+POST /ws/rest/{className}/{id}
+{ "data": { "id": 42, "version": 3, "amount": 15000, "opportunityStatus": { "id": 4 } } }
+```
+
+- Seuls les champs envoyés sont modifiés. Un M2O s'envoie sous la forme `{ "id": … }`.
+- `version` est **obligatoire** (verrouillage optimiste) : c'est celle lue avec le `GET`. Si la fiche a changé entre-temps, Axelor refuse (`OptimisticLockException`).
+- ⚠️ Les erreurs métier (dont le conflit de version) reviennent avec un **HTTP 200** et `"status": -1` dans le corps : toujours tester `status`, pas seulement `res.ok`. Helper : `axelorUpdate()` ; tools : passer par `updateWithPreview()` (aperçu « avant → après », puis `confirm=true` + `version`).
+- L'API ne déclenche pas les actions `onchange` de l'écran (ex. : probabilité recalculée au changement d'étape) : les valeurs dérivées doivent être envoyées explicitement.
+
 ### Opérateurs de critères disponibles
 
 - `=`, `!=`, `<`, `>`, `<=`, `>=`

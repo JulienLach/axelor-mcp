@@ -1028,6 +1028,151 @@ async function axelorCreate(className: string, data: Record<string, unknown>): P
     return json.data?.[0] ?? null;
 }
 
+// ── Mise à jour (update_*) ───────────────────────────────────────────────────
+
+// Axelor signale ses erreurs métier (dont le conflit de version) avec un HTTP 200 et status = -1 dans le corps
+async function axelorUpdate(className: string, data: Record<string, unknown>): Promise<unknown> {
+    const res = await axelorFetch(`/ws/rest/${className}/${data.id}`, {
+        method: "POST",
+        body: JSON.stringify({ data }),
+    });
+    if (!res.ok) throw new Error(`Axelor update failed (${className}): ${res.status} — ${await res.text()}`);
+    const json = (await res.json()) as { status?: number; data?: unknown };
+    if (json.status !== undefined && json.status !== 0) {
+        const err = json.data as { message?: string; title?: string } | undefined;
+        throw new Error(err?.message ?? err?.title ?? JSON.stringify(json.data));
+    }
+    return Array.isArray(json.data) ? (json.data[0] ?? null) : null;
+}
+
+type ScalarChange = { field: string; label: string; value: unknown; display?: (v: unknown) => string };
+type RelationChange = { field: string; label: string; id: number | undefined; className: string };
+
+type Named = Parameters<typeof refName>[0];
+
+const showValue = (v: unknown) => (v === null || v === undefined || v === "" ? "—" : String(v));
+
+// Applique un patch avec aperçu obligatoire et verrouillage optimiste :
+// l'aperçu renvoie la version lue, la confirmation l'envoie, et Axelor refuse si la fiche a changé entre-temps.
+async function updateWithPreview(params: {
+    label: string;
+    className: string;
+    id: number;
+    confirm?: boolean;
+    version?: number;
+    scalars: ScalarChange[];
+    relations: RelationChange[];
+}) {
+    const { label, className, id, confirm, version } = params;
+    const current = (await axelorGetById(className, id)) as Record<string, unknown> | null;
+    if (!current) return { ...text(`${label} ID ${id} introuvable.`), isError: true };
+
+    const data: Record<string, unknown> = { id };
+    const changes: string[] = [];
+    for (const c of params.scalars) {
+        if (c.value === undefined) continue;
+        const display = c.display ?? showValue;
+        data[c.field] = c.value;
+        changes.push(`- ${c.label} : ${display(current[c.field])} → ${display(c.value)}`);
+    }
+    for (const r of params.relations) {
+        if (r.id === undefined) continue;
+        // Vérifie que la cible existe avant d'écrire, et récupère son libellé pour l'aperçu
+        const target = await axelorGetById(r.className, r.id);
+        if (!target)
+            return { ...text(`${r.label} : ID ${r.id} introuvable. Utilise list_reference pour trouver le bon ID.`), isError: true };
+        data[r.field] = { id: r.id };
+        const before = refName(current[r.field] as Named) ?? "—";
+        changes.push(`- ${r.label} : ${before} → ${refName(target as Named) ?? `id ${r.id}`}`);
+    }
+    if (changes.length === 0) return { ...text("Aucune modification demandée : précise au moins un champ à changer."), isError: true };
+
+    const name = refName(current as Named) ?? `ID ${id}`;
+    if (!confirm)
+        return text(
+            `⚠️ Aperçu avant modification — rien n'a été modifié dans Axelor.\n\n` +
+                `${label} « ${name} » (version ${current.version}) :\n${changes.join("\n")}\n\n` +
+                `Vérifie ces changements avec l'utilisateur. S'ils sont corrects, rappelle ce même outil avec les mêmes ` +
+                `paramètres, confirm=true et version=${current.version}.`,
+        );
+    if (version === undefined)
+        return { ...text(`Passe version=${current.version} (renvoyée par l'aperçu) avec confirm=true.`), isError: true };
+
+    const conflict = {
+        ...text(
+            `${label} « ${name} » a été modifié(e) par quelqu'un d'autre depuis l'aperçu. ` +
+                `Rien n'a été écrit : relance l'aperçu pour repartir des valeurs à jour.`,
+        ),
+        isError: true,
+    };
+    if (version !== current.version) return conflict;
+
+    data.version = version;
+    try {
+        await axelorUpdate(className, data);
+    } catch (e) {
+        const msg = (e as Error).message;
+        // Filet de sécurité : modification concurrente entre notre lecture et l'écriture
+        if (/optimistic|version/i.test(msg)) return conflict;
+        return { ...text(`Échec de la modification : ${msg}`), isError: true };
+    }
+    return text(`✅ ${label} « ${name} » mis(e) à jour :\n${changes.join("\n")}`);
+}
+
+server.registerTool(
+    "update_lead",
+    {
+        description:
+            "Modifier une piste (lead) CRM existante : statut, scoring, responsable, date de contact, motif de perte. " +
+            "Fonctionne en deux temps : un premier appel renvoie un aperçu « avant → après » avec la version de la fiche, puis un second appel avec confirm=true et cette version écrit la modification. " +
+            "Les IDs (statut, responsable, motif de perte) se trouvent avec list_reference. Seuls les champs passés sont modifiés.",
+        inputSchema: {
+            id: z.number().describe("ID de la piste (champ 'id' retourné par search_leads)"),
+            leadStatusId: z.number().optional().describe("ID du nouveau statut (list_reference type lead_status)"),
+            leadScoringSelect: z.enum(["cold", "warm", "hot"]).optional().describe("Scoring : cold=1, warm=2, hot=3"),
+            userId: z.number().optional().describe("ID du nouveau responsable (list_reference type user)"),
+            contactDate: z.string().optional().describe("Date de contact (YYYY-MM-DD)"),
+            lostReasonId: z.number().optional().describe("ID du motif de perte (list_reference type lost_reason)"),
+            confirm: z
+                .boolean()
+                .optional()
+                .describe(
+                    "Mettre à true uniquement après validation explicite de l'utilisateur. Sans ce paramètre, l'outil renvoie un aperçu « avant → après » sans rien modifier.",
+                ),
+            version: z
+                .number()
+                .optional()
+                .describe("Version de la fiche renvoyée par l'aperçu — obligatoire avec confirm=true (protège contre l'écrasement d'une modification concurrente)"),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    },
+    async ({ id, leadStatusId, leadScoringSelect, userId, contactDate, lostReasonId, confirm, version }) => {
+        const scoringMap = { cold: 1, warm: 2, hot: 3 };
+        const scoringLabels: Record<number, string> = { 1: "froid", 2: "tiède", 3: "chaud" };
+        return updateWithPreview({
+            label: "La piste",
+            className: CLASSES.lead,
+            id,
+            confirm,
+            version,
+            scalars: [
+                {
+                    field: "leadScoringSelect",
+                    label: "Scoring",
+                    value: leadScoringSelect && scoringMap[leadScoringSelect],
+                    display: (v) => scoringLabels[Number(v)] ?? showValue(v),
+                },
+                { field: "contactDate", label: "Date de contact", value: contactDate },
+            ],
+            relations: [
+                { field: "leadStatus", label: "Statut", id: leadStatusId, className: CLASSES.leadStatus },
+                { field: "user", label: "Responsable", id: userId, className: CLASSES.user },
+                { field: "lostReason", label: "Motif de perte", id: lostReasonId, className: CLASSES.lostReason },
+            ],
+        });
+    },
+);
+
 server.registerTool(
     "search_opportunities",
     {
@@ -1166,6 +1311,58 @@ server.registerTool(
         const result = await axelorCreate(CLASSES.opportunity, data);
         return text(result ? JSON.stringify(result, null, 2) : "Échec de la création de l'opportunité.");
     },
+);
+
+server.registerTool(
+    "update_opportunity",
+    {
+        description:
+            "Modifier une opportunité CRM existante : étape de vente, montant, probabilité, date de closing prévue, responsable, motif de perte. " +
+            "Fonctionne en deux temps : un premier appel renvoie un aperçu « avant → après » avec la version de la fiche, puis un second appel avec confirm=true et cette version écrit la modification. " +
+            "Les IDs (étape, responsable, motif de perte) se trouvent avec list_reference. Seuls les champs passés sont modifiés. " +
+            "L'API ne déclenche pas les automatismes de l'écran Axelor : en changeant d'étape, renseigner aussi la probabilité si elle doit suivre.",
+        inputSchema: {
+            id: z.number().describe("ID de l'opportunité (champ 'id' retourné par search_opportunities)"),
+            opportunityStatusId: z
+                .number()
+                .optional()
+                .describe("ID de la nouvelle étape de vente (list_reference type opportunity_status)"),
+            amount: z.number().min(0).optional().describe("Nouveau montant estimé (HT)"),
+            probability: z.number().min(0).max(100).optional().describe("Nouvelle probabilité de closing en % (0-100)"),
+            expectedCloseDate: z.string().optional().describe("Nouvelle date de closing prévue (YYYY-MM-DD)"),
+            userId: z.number().optional().describe("ID du nouveau responsable (list_reference type user)"),
+            lostReasonId: z.number().optional().describe("ID du motif de perte (list_reference type lost_reason)"),
+            confirm: z
+                .boolean()
+                .optional()
+                .describe(
+                    "Mettre à true uniquement après validation explicite de l'utilisateur. Sans ce paramètre, l'outil renvoie un aperçu « avant → après » sans rien modifier.",
+                ),
+            version: z
+                .number()
+                .optional()
+                .describe("Version de la fiche renvoyée par l'aperçu — obligatoire avec confirm=true (protège contre l'écrasement d'une modification concurrente)"),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    },
+    async ({ id, opportunityStatusId, amount, probability, expectedCloseDate, userId, lostReasonId, confirm, version }) =>
+        updateWithPreview({
+            label: "L'opportunité",
+            className: CLASSES.opportunity,
+            id,
+            confirm,
+            version,
+            scalars: [
+                { field: "amount", label: "Montant", value: amount },
+                { field: "probability", label: "Probabilité (%)", value: probability },
+                { field: "expectedCloseDate", label: "Date de closing prévue", value: expectedCloseDate },
+            ],
+            relations: [
+                { field: "opportunityStatus", label: "Étape", id: opportunityStatusId, className: CLASSES.opportunityStatus },
+                { field: "user", label: "Responsable", id: userId, className: CLASSES.user },
+                { field: "lostReason", label: "Motif de perte", id: lostReasonId, className: CLASSES.lostReason },
+            ],
+        }),
 );
 
 // ── Événements CRM (Event) ───────────────────────────────────────────────────
