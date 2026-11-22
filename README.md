@@ -146,6 +146,7 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 **Produits**
 
 - `search_products` - _"Trouve le produit Prestation de conseil dans le catalogue"_
+- `get_product` - _"Combien coûte la journée de conseil, et quelle marge on fait dessus ?"_ (par ID ou code : type, famille, catégorie, unité, prix de vente, de revient, d'achat, PMP, marge unitaire, taux de marge et coefficient)
 
 **Commandes clients**
 

@@ -364,6 +364,88 @@ server.registerTool(
     },
 );
 
+type Ref = { id: number; name?: string; fullName?: string; code?: string } | null;
+
+type ProductRecord = {
+    id: number;
+    code?: string;
+    name?: string;
+    description?: string;
+    internalDescription?: string;
+    productTypeSelect?: string;
+    salePrice?: string | number;
+    costPrice?: string | number;
+    purchasePrice?: string | number;
+    avgPrice?: string | number;
+    saleCurrency?: Ref;
+    unit?: Ref;
+    productFamily?: Ref;
+    productCategory?: Ref;
+    sellable?: boolean | null;
+    purchasable?: boolean | null;
+    archived?: boolean | null;
+    startDate?: string;
+    endDate?: string;
+};
+
+// Montant unitaire : 2 décimales, devise en suffixe (les prix Axelor arrivent en chaînes décimales)
+function fmtPrice(value: string | number | undefined, currency = ""): string {
+    const n = Number(value ?? 0);
+    return `${n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${currency ? ` ${currency}` : ""}`;
+}
+
+// La marge se calcule sur le prix de revient (costPrice), comme la marge des lignes de vente dans AOS
+function productMarginLine(p: ProductRecord, currency: string): string {
+    const sale = Number(p.salePrice ?? 0);
+    const cost = Number(p.costPrice ?? 0);
+    if (sale <= 0 || cost <= 0) return "Marge : non calculable (prix de vente ou prix de revient non renseigné)";
+    const margin = sale - cost;
+    const rate = ((margin / sale) * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 });
+    const coef = (sale / cost).toLocaleString("fr-FR", { maximumFractionDigits: 2 });
+    return `Marge unitaire (vente - revient) : ${fmtPrice(margin, currency)} — taux de marge ${rate} % — coefficient ${coef}`;
+}
+
+const yesNo = (v: boolean | null | undefined) => (v ? "oui" : "non");
+
+server.registerTool(
+    "get_product",
+    {
+        description:
+            "Fiche d'un produit Axelor par ID ou code : type, famille, catégorie, unité, prix de vente, prix de revient, prix d'achat, PMP et marge unitaire calculée (taux et coefficient). " +
+            "Pour savoir qui l'achète et à quel prix réel, enchaîner avec search_sale_order_lines.",
+        inputSchema: {
+            id: z.number().optional().describe("ID du produit (champ 'id' retourné par search_products)"),
+            code: z.string().optional().describe("Code exact du produit (si l'ID n'est pas connu)"),
+        },
+        annotations: { readOnlyHint: true },
+    },
+    async ({ id, code }) => {
+        if (id === undefined && !code) return { ...text("Indique l'id ou le code du produit."), isError: true };
+        const criterion: Criterion =
+            id !== undefined ? { fieldName: "id", operator: "=", value: id } : { fieldName: "code", operator: "=", value: code };
+        const { data } = await axelorSearch(CLASSES.product, PRODUCT_FIELDS, [criterion], { limit: 1 });
+        const p = data[0] as ProductRecord | undefined;
+        if (!p) return text(`Produit ${id !== undefined ? `ID ${id}` : `de code ${code}`} introuvable.`);
+
+        const currency = p.saleCurrency?.code ?? refName(p.saleCurrency) ?? "";
+        const lines = [
+            `${p.code ? `[${p.code}] ` : ""}${p.name ?? "(sans nom)"} — id ${p.id}`,
+            `Type : ${p.productTypeSelect ?? "?"} | Famille : ${refName(p.productFamily) ?? "—"} | Catégorie : ${refName(p.productCategory) ?? "—"} | Unité : ${refName(p.unit) ?? "—"}`,
+            `Vendable : ${yesNo(p.sellable)} | Achetable : ${yesNo(p.purchasable)} | Archivé : ${yesNo(p.archived)}` +
+                (p.startDate || p.endDate ? ` | Commercialisé du ${p.startDate ?? "?"} au ${p.endDate ?? "—"}` : ""),
+            "",
+            `Prix de vente HT : ${fmtPrice(p.salePrice, currency)}`,
+            `Prix de revient : ${fmtPrice(p.costPrice)} | Prix d'achat : ${fmtPrice(p.purchasePrice)} | PMP : ${fmtPrice(p.avgPrice)}`,
+            productMarginLine(p, currency),
+        ];
+        // Les descriptions Axelor sont saisies en HTML (éditeur riche)
+        const plain = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        if (p.description) lines.push("", `Description : ${plain(p.description)}`);
+        if (p.internalDescription) lines.push(`Note interne : ${plain(p.internalDescription)}`);
+        return text(lines.join("\n"));
+    },
+);
+
 // ── Analyse des ventes ───────────────────────────────────────────────────────
 
 type SaleOrderAnalysis = {
