@@ -256,22 +256,40 @@ server.registerTool(
     "search_partners",
     {
         description:
-            "Rechercher des partenaires (clients, fournisseurs, prospects, contacts) dans Axelor par nom ou référence",
+            "Rechercher des partenaires (clients, fournisseurs, prospects, contacts) dans Axelor par nom, référence (partnerSeq), email ou téléphone. Supporte la pagination via offset/limit. Pour les contacts d'une société, préférer search_contacts.",
         inputSchema: {
-            query: z.string().describe("Nom ou référence du partenaire"),
+            query: z
+                .string()
+                .optional()
+                .describe("Nom, référence, email ou téléphone (partiel) du partenaire. Vide : tous les partenaires du type demandé"),
             type: z
                 .enum(["all", "customer", "supplier", "prospect", "contact"])
                 .optional()
                 .describe("Filtrer par type : all (défaut), customer, supplier, prospect, contact"),
+            limit: z.number().optional().describe("Nombre de résultats (défaut : 20)"),
+            offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
         },
+        annotations: { readOnlyHint: true },
     },
-    async ({ query, type = "all" }) => {
-        const criteria: Criterion[] = [{ fieldName: "name", operator: "like", value: `%${query}%` }];
+    async ({ query, type = "all", limit, offset }) => {
+        const criteria: Criterion[] = [];
+        if (query)
+            criteria.push({
+                operator: "or",
+                criteria: ["name", "fullName", "partnerSeq", "emailAddress.address", "fixedPhone", "mobilePhone"].map(
+                    (fieldName) => ({ fieldName, operator: "like", value: `%${query}%` }),
+                ),
+            });
         if (type === "customer") criteria.push({ fieldName: "isCustomer", operator: "=", value: true });
         if (type === "supplier") criteria.push({ fieldName: "isSupplier", operator: "=", value: true });
         if (type === "prospect") criteria.push({ fieldName: "isProspect", operator: "=", value: true });
         if (type === "contact") criteria.push({ fieldName: "isContact", operator: "=", value: true });
-        const { data, total } = await axelorSearch(CLASSES.partner, PARTNER_FIELDS, criteria);
+        if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
+        const { data, total } = await axelorSearch(CLASSES.partner, PARTNER_FIELDS, criteria, {
+            sortBy: ["fullName"],
+            limit: limit ?? 20,
+            offset: offset ?? 0,
+        });
         return text(formatResult("partenaire", data, total));
     },
 );
@@ -313,7 +331,7 @@ server.registerTool(
         if (query)
             criteria.push({
                 operator: "or",
-                criteria: ["fullName", "emailAddress.address", "fixedPhone", "mobilePhone"].map((fieldName) => ({
+                criteria: ["name", "fullName", "emailAddress.address", "fixedPhone", "mobilePhone"].map((fieldName) => ({
                     fieldName,
                     operator: "like",
                     value: `%${query}%`,
@@ -842,7 +860,7 @@ server.registerTool(
     "search_leads",
     {
         description:
-            "Rechercher des pistes (leads) CRM dans Axelor. Filtres : nom, entreprise, responsable, statut, scoring, source. Idéal pour lister les pistes à traiter ou relancer.",
+            "Rechercher des pistes (leads) CRM dans Axelor. Filtres : nom, entreprise, responsable, scoring, conversion, nurturing, date de création, date de contact. Idéal pour lister les pistes à traiter ou relancer. Supporte la pagination via offset/limit.",
         inputSchema: {
             name: z.string().optional().describe("Nom ou prénom (partiel) du contact"),
             enterpriseName: z.string().optional().describe("Nom (partiel) de l'entreprise"),
@@ -854,9 +872,33 @@ server.registerTool(
                 .describe("Filtrer les pistes converties (true) ou non converties (false)"),
             isNurturing: z.boolean().optional().describe("Filtrer les pistes en nurturing"),
             archived: z.boolean().optional().describe("Inclure les pistes archivées (défaut : false)"),
+            createdFrom: z.string().optional().describe("Date de création minimale (YYYY-MM-DD)"),
+            createdTo: z.string().optional().describe("Date de création maximale (YYYY-MM-DD)"),
+            contactDateFrom: z.string().optional().describe("Date de contact minimale (YYYY-MM-DD)"),
+            contactDateTo: z
+                .string()
+                .optional()
+                .describe("Date de contact maximale (YYYY-MM-DD) — ex : aujourd'hui pour les pistes à relancer"),
+            limit: z.number().optional().describe("Nombre de résultats (défaut : 20)"),
+            offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
         },
+        annotations: { readOnlyHint: true },
     },
-    async ({ name, enterpriseName, userName, leadScoringSelect, isConverted, isNurturing, archived }) => {
+    async ({
+        name,
+        enterpriseName,
+        userName,
+        leadScoringSelect,
+        isConverted,
+        isNurturing,
+        archived,
+        createdFrom,
+        createdTo,
+        contactDateFrom,
+        contactDateTo,
+        limit,
+        offset,
+    }) => {
         const criteria: Criterion[] = [];
 
         if (name)
@@ -877,11 +919,18 @@ server.registerTool(
         if (isConverted !== undefined) criteria.push({ fieldName: "isConverted", operator: "=", value: isConverted });
         if (isNurturing !== undefined) criteria.push({ fieldName: "isNurturing", operator: "=", value: isNurturing });
         if (!archived) criteria.push(NOT_ARCHIVED);
+        // createdOn est un datetime : borner sur la journée entière
+        if (createdFrom) criteria.push({ fieldName: "createdOn", operator: ">=", value: `${createdFrom}T00:00:00` });
+        if (createdTo) criteria.push({ fieldName: "createdOn", operator: "<=", value: `${createdTo}T23:59:59` });
+        if (contactDateFrom) criteria.push({ fieldName: "contactDate", operator: ">=", value: contactDateFrom });
+        if (contactDateTo) criteria.push({ fieldName: "contactDate", operator: "<=", value: contactDateTo });
 
         if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
 
         const { data, total } = await axelorSearch(CLASSES.lead, LEAD_FIELDS, criteria, {
             sortBy: ["-leadScoringSelect", "-createdOn"],
+            limit: limit ?? 20,
+            offset: offset ?? 0,
         });
         return text(formatResult("piste", data, total));
     },
@@ -982,24 +1031,58 @@ server.registerTool(
     "search_opportunities",
     {
         description:
-            "Rechercher des opportunités CRM dans Axelor. Filtres : nom, client, responsable, statut de l'étape de vente.",
+            "Rechercher des opportunités CRM dans Axelor. Filtres : nom, client, responsable, étape de vente, montant, date de closing prévue. Supporte la pagination via offset/limit.",
         inputSchema: {
             name: z.string().optional().describe("Nom (partiel) de l'opportunité"),
             partnerName: z.string().optional().describe("Nom (partiel) du client / prospect"),
             userName: z.string().optional().describe("Nom (partiel) du responsable assigné"),
+            statusName: z
+                .string()
+                .optional()
+                .describe("Étape de vente (nom partiel de l'OpportunityStatus — liste via list_reference type opportunity_status)"),
+            amountMin: z.number().optional().describe("Montant estimé minimal"),
+            amountMax: z.number().optional().describe("Montant estimé maximal"),
+            closeDateFrom: z.string().optional().describe("Date de closing prévue minimale (YYYY-MM-DD)"),
+            closeDateTo: z
+                .string()
+                .optional()
+                .describe("Date de closing prévue maximale (YYYY-MM-DD) — ex : aujourd'hui pour les closings dépassés"),
             archived: z.boolean().optional().describe("Inclure les opportunités archivées (défaut : false)"),
+            limit: z.number().optional().describe("Nombre de résultats (défaut : 20)"),
+            offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
         },
+        annotations: { readOnlyHint: true },
     },
-    async ({ name, partnerName, userName, archived }) => {
+    async ({
+        name,
+        partnerName,
+        userName,
+        statusName,
+        amountMin,
+        amountMax,
+        closeDateFrom,
+        closeDateTo,
+        archived,
+        limit,
+        offset,
+    }) => {
         const criteria: Criterion[] = [];
         if (name) criteria.push({ fieldName: "name", operator: "like", value: `%${name}%` });
         if (partnerName) criteria.push({ fieldName: "partner.name", operator: "like", value: `%${partnerName}%` });
         if (userName) criteria.push({ fieldName: "user.name", operator: "like", value: `%${userName}%` });
+        if (statusName)
+            criteria.push({ fieldName: "opportunityStatus.name", operator: "like", value: `%${statusName}%` });
+        if (amountMin !== undefined) criteria.push({ fieldName: "amount", operator: ">=", value: amountMin });
+        if (amountMax !== undefined) criteria.push({ fieldName: "amount", operator: "<=", value: amountMax });
+        if (closeDateFrom) criteria.push({ fieldName: "expectedCloseDate", operator: ">=", value: closeDateFrom });
+        if (closeDateTo) criteria.push({ fieldName: "expectedCloseDate", operator: "<=", value: closeDateTo });
         if (!archived) criteria.push(NOT_ARCHIVED);
         if (criteria.length === 0) criteria.push({ fieldName: "id", operator: "notNull", value: null });
 
         const { data, total } = await axelorSearch(CLASSES.opportunity, OPPORTUNITY_FIELDS, criteria, {
             sortBy: ["-expectedCloseDate"],
+            limit: limit ?? 20,
+            offset: offset ?? 0,
         });
         return text(formatResult("opportunité", data, total));
     },
@@ -3210,8 +3293,8 @@ Prépare la revue hebdomadaire d'un commercial ou d'une équipe, uniquement à p
 ## 1. Collecter
 - **Commandes signées** : \`analyze_sales\` (statusSelect confirmed et completed, semaine écoulée, groupBy salesperson, filtré par salespersonName ou teamName), puis la semaine précédente pour comparer.
 - **Devis à relancer** : \`search_sale_orders\` (statusSelect finalized) : devis envoyés non signés, en priorité ceux créés il y a plus de 15 jours.
-- **Pipeline** : \`analyze_opportunities\` (userName, groupBy status) pour le pipeline pondéré, puis \`search_opportunities\` (userName) pour repérer les opportunités dont la date de closing est dépassée ou tombe dans les 7 prochains jours.
-- **Pistes chaudes** : \`search_leads\` (userName, leadScoringSelect hot, isConverted false).
+- **Pipeline** : \`analyze_opportunities\` (userName, groupBy status) pour le pipeline pondéré, puis \`search_opportunities\` (userName, closeDateTo = aujourd'hui + 7 jours) pour lister les opportunités dont la date de closing est dépassée ou tombe dans la semaine.
+- **Pistes chaudes** : \`search_leads\` (userName, leadScoringSelect hot, isConverted false), et celles dont la date de contact est passée (contactDateTo = aujourd'hui).
 - **Produits vendus** : \`search_sale_order_lines\` (salespersonName, semaine écoulée) si l'utilisateur veut le détail.
 
 ## 2. Restituer

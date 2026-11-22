@@ -139,7 +139,7 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 
 **Partenaires**
 
-- `search_partners` - _"Recherche le client Dupont dans Axelor"_
+- `search_partners` - _"Recherche le client Dupont dans Axelor"_, _"À qui appartient le 06 12 34 56 78 ?"_, _"Liste mes prospects"_ (recherche sur nom, référence, email ou téléphone ; filtre par type ; pagination)
 - `get_partner` - _"Montre-moi toutes les infos sur le partenaire Dupont"_
 - `search_contacts` - _"Qui sont mes interlocuteurs chez Dupont ?"_, _"Trouve le contact dont l'email contient @abc.fr"_ (filtres : société par nom ou ID, nom / email / téléphone du contact, pagination ; contacts archivés exclus)
 
@@ -172,14 +172,14 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 
 **Opportunités CRM**
 
-- `search_opportunities` - _"Liste les opportunités du client Dupont"_, _"Opportunités suivies par Marie"_ (filtres : nom, client, responsable, archivé)
+- `search_opportunities` - _"Liste les opportunités du client Dupont"_, _"Opportunités suivies par Marie"_, _"Opportunités de plus de 10 k€ qui doivent se signer ce mois-ci"_ (filtres : nom, client, responsable, étape de vente, montant min/max, date de closing prévue, archivé, pagination)
 - `get_opportunity` - _"Détails de l'opportunité Structure métallique Tuyauterie & Caux"_
 - `create_opportunity` - _"Crée une opportunité de 15 000 € pour le prospect Martin avec 60 % de probabilité"_
 - `analyze_opportunities` - _"État du pipeline par étape de vente"_, _"Pipeline pondéré par commercial pour les closings du trimestre"_, _"Quelles sources apportent le plus d'opportunités ?"_ (groupBy : status / salesperson / source / month ; montant total et pondéré par la probabilité ; filtres : période de closing prévue, client, commercial)
 
 **Pistes CRM**
 
-- `search_leads` - _"Montre-moi les pistes chaudes non converties assignées à Julien"_
+- `search_leads` - _"Montre-moi les pistes chaudes non converties assignées à Julien"_, _"Pistes créées cette semaine"_, _"Pistes dont la date de contact est passée"_ (filtres : nom, entreprise, responsable, scoring, conversion, nurturing, date de création, date de contact, archivé, pagination)
 - `get_lead` - _"Détails de la piste Jean Dupont chez ABC"_
 - `create_lead` - _"Crée une piste pour Jean Dupont de la société ABC, email jean@abc.fr"_
 
