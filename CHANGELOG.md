@@ -17,6 +17,14 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - **`client_review` and `weekly_sales_review` prompts**: guided client summary and weekly sales review built from the existing tools.
 - New tools declare the MCP `readOnlyHint` annotation.
 
+### Changed
+
+- **`search_partners`**: `query` now also matches the partner reference, email and phones, and becomes optional to list every partner of a type. Adds `limit` / `offset` pagination.
+- **`search_leads`**: new filters on creation date and contact date, and `limit` / `offset` pagination.
+- **`search_opportunities`**: new filters on sales stage (`statusName`), amount range and expected close date, and `limit` / `offset` pagination.
+- **`weekly_sales_review` prompt**: uses the new close-date and contact-date filters to find overdue opportunities and leads.
+- The three search tools above declare the `readOnlyHint` annotation.
+
 ## [1.0.5] - 2026-10-24
 
 ### Added
