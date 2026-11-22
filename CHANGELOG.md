@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`list_reference`**: lists the values of a reference model with their IDs (users, teams, companies, currencies, sources, lead statuses, opportunity statuses and types, lost reasons, payment conditions and modes), so `create_lead`, `create_opportunity` and `create_sale_order` no longer need IDs to be guessed. A model missing from the instance returns an actionable error instead of failing.
+- **`search_sale_order_lines`**: searches quote and order lines by product, client, salesperson and period, with a `scope` of confirmed orders (filtered on order date), quotes (filtered on creation date) or both. Each line carries the client and order IDs to chain with `get_partner` / `get_sale_order`.
+- **`client_review` and `weekly_sales_review` prompts**: guided client summary and weekly sales review built from the existing tools.
+- New tools declare the MCP `readOnlyHint` annotation.
+
 ## [1.0.5] - 2026-10-24
 
 ### Added

@@ -10,6 +10,8 @@ import {
     LEAD_FIELDS,
     MOVE_LINE_FIELDS,
     PROJECT_TASK_FIELDS,
+    REFERENCE_CODE_FIELDS,
+    REFERENCE_FIELDS,
     OPPORTUNITY_ANALYSIS_FIELDS,
     OPPORTUNITY_FIELDS,
     PARTNER_FIELDS,
@@ -19,6 +21,7 @@ import {
     SALE_ANALYSIS_FIELDS,
     SALE_ORDER_FIELDS,
     SALE_ORDER_LINE_FIELDS,
+    SALE_ORDER_LINE_SEARCH_FIELDS,
     TIMESHEET_FIELDS,
     TIMESHEET_LINE_FIELDS,
     TRACEBACK_FIELDS,
@@ -136,6 +139,115 @@ function confirmPreview(label: string, data: Record<string, unknown>): string {
 // ── Serveur MCP ───────────────────────────────────────────────────────────────
 
 const server = new McpServer({ name: "axelor-mcp", version: "1.0.5" });
+
+// ── Référentiels ──────────────────────────────────────────────────────────────
+
+// Un référentiel par type : classe, champs projetés, et paramètre des tools create_* qui l'attend.
+const REFERENCES = {
+    user: {
+        className: CLASSES.user,
+        fields: REFERENCE_CODE_FIELDS,
+        usedBy: "userId (create_lead, create_opportunity)",
+    },
+    team: {
+        className: CLASSES.team,
+        fields: REFERENCE_FIELDS,
+        usedBy: "filtres teamName des analyses",
+    },
+    company: {
+        className: CLASSES.company,
+        fields: REFERENCE_CODE_FIELDS,
+        usedBy: "companyId (create_sale_order)",
+    },
+    currency: {
+        className: CLASSES.currency,
+        fields: REFERENCE_CODE_FIELDS,
+        usedBy: "currencyId (create_sale_order, create_opportunity)",
+    },
+    source: {
+        className: CLASSES.source,
+        fields: REFERENCE_FIELDS,
+        usedBy: "sourceId (create_lead, create_opportunity)",
+    },
+    lead_status: {
+        className: CLASSES.leadStatus,
+        fields: REFERENCE_FIELDS,
+        usedBy: "statut des pistes",
+    },
+    opportunity_status: {
+        className: CLASSES.opportunityStatus,
+        fields: REFERENCE_FIELDS,
+        usedBy: "opportunityStatusId (create_opportunity)",
+    },
+    opportunity_type: {
+        className: CLASSES.opportunityType,
+        fields: REFERENCE_FIELDS,
+        usedBy: "opportunityTypeId (create_opportunity)",
+    },
+    lost_reason: {
+        className: CLASSES.lostReason,
+        fields: REFERENCE_FIELDS,
+        usedBy: "motifs de perte (pistes, opportunités)",
+    },
+    payment_condition: {
+        className: CLASSES.paymentCondition,
+        fields: REFERENCE_CODE_FIELDS,
+        usedBy: "conditions de paiement",
+    },
+    payment_mode: {
+        className: CLASSES.paymentMode,
+        fields: REFERENCE_CODE_FIELDS,
+        usedBy: "modes de règlement",
+    },
+} as const;
+
+type ReferenceType = keyof typeof REFERENCES;
+const REFERENCE_TYPES = Object.keys(REFERENCES) as [ReferenceType, ...ReferenceType[]];
+
+server.registerTool(
+    "list_reference",
+    {
+        description:
+            "Lister les valeurs d'un référentiel Axelor avec leur ID : utilisateurs, équipes, sociétés, devises, sources, statuts de piste, étapes d'opportunité, types d'opportunité, motifs de perte, conditions et modes de paiement. " +
+            "À appeler avant create_lead, create_opportunity ou create_sale_order pour trouver les IDs attendus (userId, sourceId, opportunityStatusId, currencyId, companyId…) au lieu de les deviner.",
+        inputSchema: {
+            type: z.enum(REFERENCE_TYPES).describe("Référentiel à lister"),
+            query: z.string().optional().describe("Filtrer par nom ou code (partiel)"),
+            limit: z.number().optional().describe("Nombre de résultats (défaut : 50)"),
+        },
+        annotations: { readOnlyHint: true },
+    },
+    async ({ type, query, limit = 50 }) => {
+        const ref = REFERENCES[type];
+        const hasCode = ref.fields.includes("code");
+        const criteria: Criterion[] = [NOT_ARCHIVED];
+        if (query) {
+            const byName: Criterion = { fieldName: "name", operator: "like", value: `%${query}%` };
+            criteria.push(
+                hasCode
+                    ? { operator: "or", criteria: [byName, { fieldName: "code", operator: "like", value: `%${query}%` }] }
+                    : byName,
+            );
+        }
+
+        let result: { data: unknown[]; total: number };
+        try {
+            result = await axelorSearch(ref.className, [...ref.fields], criteria, { limit, sortBy: ["name"] });
+        } catch (e) {
+            // Le modèle peut ne pas exister si le module n'est pas installé (ou si sa classe diffère selon la version d'AOS)
+            return {
+                ...text(`Impossible de lister le référentiel "${type}" (${ref.className}) : ${(e as Error).message}. Le module correspondant n'est peut-être pas installé sur cette instance.`),
+                isError: true,
+            };
+        }
+
+        const rows = result.data as { id: number; code?: string; name?: string }[];
+        if (rows.length === 0) return text(`Aucune valeur trouvée pour le référentiel "${type}".`);
+        const lines = rows.map((r) => `• id ${r.id}${r.code ? ` — [${r.code}]` : ""} ${r.name ?? "(sans nom)"}`);
+        const more = result.total > rows.length ? `\n\n⚠ ${rows.length} valeurs affichées sur ${result.total} : affine avec query.` : "";
+        return text(`Référentiel "${type}" — à utiliser pour : ${ref.usedBy}\n\n${lines.join("\n")}${more}`);
+    },
+);
 
 // ── Partenaires ───────────────────────────────────────────────────────────────
 
@@ -975,6 +1087,70 @@ server.registerTool(
         ].join("\n");
 
         return text(header + rows.join("\n\n"));
+    },
+);
+
+// ── Recherche de lignes de commande (SaleOrderLine) ──────────────────────────
+
+server.registerTool(
+    "search_sale_order_lines",
+    {
+        description:
+            "Rechercher des lignes de devis / commandes clients (SaleOrderLine) : qui a acheté tel produit, ce qu'un client commande habituellement, à quel prix et avec quelle remise. " +
+            "Filtres : produit (nom ou code), client, commercial, période, périmètre (commandes confirmées, devis ou les deux). " +
+            "Chaque ligne renvoie le client (saleOrder.clientPartner.id → get_partner) et la commande (saleOrder.id → get_sale_order). Pour des totaux par produit, utiliser analyze_products.",
+        inputSchema: {
+            product: z.string().optional().describe("Nom ou code produit (partiel), ou libellé de la ligne"),
+            clientName: z.string().optional().describe("Nom (partiel) du client"),
+            clientId: z.number().optional().describe("ID du client (champ 'id' retourné par search_partners)"),
+            salespersonName: z.string().optional().describe("Nom (partiel) du commercial de la commande"),
+            scope: z
+                .enum(["orders", "quotes", "all"])
+                .optional()
+                .describe(
+                    "orders (défaut) : commandes confirmées ou terminées, période filtrée sur la date de commande ; quotes : devis brouillons ou finalisés, période filtrée sur la date de création ; all : les deux (hors annulés), période filtrée sur la date de création",
+                ),
+            dateFrom: z.string().optional().describe("Date minimale (YYYY-MM-DD)"),
+            dateTo: z.string().optional().describe("Date maximale (YYYY-MM-DD)"),
+            limit: z.number().optional().describe("Nombre de résultats (défaut : 50)"),
+            offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
+        },
+        annotations: { readOnlyHint: true },
+    },
+    async ({ product, clientName, clientId, salespersonName, scope = "orders", dateFrom, dateTo, limit = 50, offset = 0 }) => {
+        // SaleOrder.statusSelect : 1 brouillon, 2 devis finalisé, 3 confirmée, 4 terminée, 5 annulée
+        const statusByScope = { orders: [3, 4], quotes: [1, 2], all: [1, 2, 3, 4] };
+        // Un devis n'a pas encore de date de commande : on filtre alors sur sa date de création
+        const dateField = scope === "orders" ? "saleOrder.orderDate" : "saleOrder.creationDate";
+
+        const criteria: Criterion[] = [
+            // Exclure les lignes titre/commentaire (typeSelect = 0 = normal)
+            { fieldName: "typeSelect", operator: "=", value: 0 },
+            { fieldName: "saleOrder.statusSelect", operator: "in", value: statusByScope[scope] },
+        ];
+        if (product)
+            criteria.push({
+                operator: "or",
+                criteria: [
+                    { fieldName: "product.name", operator: "like", value: `%${product}%` },
+                    { fieldName: "product.code", operator: "like", value: `%${product}%` },
+                    { fieldName: "productName", operator: "like", value: `%${product}%` },
+                ],
+            });
+        if (clientId) criteria.push({ fieldName: "saleOrder.clientPartner.id", operator: "=", value: clientId });
+        if (clientName)
+            criteria.push({ fieldName: "saleOrder.clientPartner.name", operator: "like", value: `%${clientName}%` });
+        if (salespersonName)
+            criteria.push({ fieldName: "saleOrder.salespersonUser.name", operator: "like", value: `%${salespersonName}%` });
+        if (dateFrom) criteria.push({ fieldName: dateField, operator: ">=", value: dateFrom });
+        if (dateTo) criteria.push({ fieldName: dateField, operator: "<=", value: dateTo });
+
+        const { data, total } = await axelorSearch(CLASSES.saleOrderLine, SALE_ORDER_LINE_SEARCH_FIELDS, criteria, {
+            limit,
+            offset,
+            sortBy: [`-${dateField}`, "-id"],
+        });
+        return text(formatResult("ligne de commande", data, total));
     },
 );
 
@@ -2873,6 +3049,101 @@ server.registerPrompt(
             },
         ],
     }),
+);
+
+const CLIENT_REVIEW = `# Point client à partir d'Axelor
+
+Prépare une fiche de synthèse sur un client pour un commercial, uniquement à partir des données renvoyées par les tools. Calcule les dates à partir de la date du jour.
+
+## 1. Identifier le client
+- \`search_partners\` avec le nom donné. S'il y a plusieurs résultats, demande lequel avant de continuer.
+- Note son \`id\` et son nom exact, puis appelle \`get_partner\` pour la fiche.
+- Les filtres \`clientName\` / \`partnerName\` des autres tools sont des recherches partielles : utilise le nom exact, et signale si des homonymes risquent de fausser les chiffres.
+
+## 2. Collecter
+- **Chiffre d'affaires** : \`analyze_sales\` (clientName, statusSelect confirmed et completed, groupBy month, 12 derniers mois), puis la même période un an plus tôt pour la tendance.
+- **Dernières commandes et devis en attente** : \`search_sale_orders\` (clientName, limit 10), puis avec statusSelect finalized pour les devis envoyés non signés.
+- **Produits achetés** : \`search_sale_order_lines\` (clientId, scope orders, 12 derniers mois) : produits récurrents, prix pratiqués, remises.
+- **Facturation et impayés** : \`search_invoices\` (partnerName, unpaidOnly true) pour le reste dû ; avec dueDateTo = aujourd'hui pour la part échue.
+- **Pipeline** : \`search_opportunities\` (partnerName) : opportunités ouvertes, montant, étape, date de closing prévue.
+- **Projets et en-cours** : \`search_projects\` (clientName) et \`analyze_unbilled_time\` (clientName) si le client a des projets.
+
+## 3. Restituer
+1. **Identité** : nom, type (client, prospect), commercial ou équipe si connus.
+2. **Chiffres clés** : CA des 12 derniers mois et évolution, reste dû dont échu, pipeline ouvert, en-cours de temps non facturé.
+3. **Ce que le client achète** : top produits avec prix moyen et remise habituelle.
+4. **Points d'attention** : factures échues, devis sans suite depuis plus de 30 jours, opportunités dont la date de closing est dépassée, baisse de CA.
+5. **Prochaines actions** : 3 au maximum, chacune justifiée par une donnée ci-dessus.
+
+## Règles
+- N'invente, n'estime ni n'extrapole aucun chiffre. Si un tool échoue ou ne renvoie rien, écris « non disponible » pour cette rubrique.
+- Si un tool signale une limite atteinte, dis-le plutôt que d'afficher un total partiel.
+- Reste concis : la fiche doit se lire en une minute.`;
+
+const WEEKLY_SALES_REVIEW = `# Revue commerciale de la semaine à partir d'Axelor
+
+Prépare la revue hebdomadaire d'un commercial ou d'une équipe, uniquement à partir des données renvoyées par les tools. La semaine va du lundi au dimanche ; calcule les dates à partir de la date du jour.
+
+## 1. Collecter
+- **Commandes signées** : \`analyze_sales\` (statusSelect confirmed et completed, semaine écoulée, groupBy salesperson, filtré par salespersonName ou teamName), puis la semaine précédente pour comparer.
+- **Devis à relancer** : \`search_sale_orders\` (statusSelect finalized) : devis envoyés non signés, en priorité ceux créés il y a plus de 15 jours.
+- **Pipeline** : \`analyze_opportunities\` (userName, groupBy status) pour le pipeline pondéré, puis \`search_opportunities\` (userName) pour repérer les opportunités dont la date de closing est dépassée ou tombe dans les 7 prochains jours.
+- **Pistes chaudes** : \`search_leads\` (userName, leadScoringSelect hot, isConverted false).
+- **Produits vendus** : \`search_sale_order_lines\` (salespersonName, semaine écoulée) si l'utilisateur veut le détail.
+
+## 2. Restituer
+1. **Résumé** en 3 à 5 lignes : signé cette semaine vs semaine précédente, pipeline pondéré, alertes.
+2. **Tableau des actions de la semaine** : devis à relancer, opportunités à closer ou à requalifier (date dépassée), pistes chaudes à appeler. Pour chacune : client, montant, ancienneté, action proposée.
+3. **Chiffres** : CA signé, nombre de commandes, panier moyen, pipeline pondéré.
+
+## Règles
+- N'invente, n'estime ni n'extrapole aucun chiffre. Si une donnée manque, dis-le.
+- Signale les opportunités sans date de closing ou sans montant : ce sont des défauts de saisie à corriger.
+- Si un tool signale une limite atteinte, réduis le périmètre plutôt que d'afficher un total partiel.`;
+
+server.registerPrompt(
+    "client_review",
+    {
+        title: "Point client",
+        description:
+            "Fiche de synthèse d'un client pour un commercial : CA et tendance, produits achetés, impayés, devis en attente, opportunités ouvertes, projets, actions à mener.",
+        argsSchema: {
+            client: z.string().describe("Nom du client"),
+        },
+    },
+    ({ client }) => ({
+        messages: [
+            {
+                role: "user",
+                content: { type: "text", text: `${CLIENT_REVIEW}\n\n## Client demandé\n${client}` },
+            },
+        ],
+    }),
+);
+
+server.registerPrompt(
+    "weekly_sales_review",
+    {
+        title: "Revue commerciale de la semaine",
+        description:
+            "Revue hebdomadaire d'un commercial ou d'une équipe : commandes signées, devis à relancer, opportunités à closer, pistes chaudes.",
+        argsSchema: {
+            commercial: z.string().optional().describe("Nom du commercial (laisser vide pour une équipe ou toute l'entreprise)"),
+            equipe: z.string().optional().describe("Nom de l'équipe commerciale"),
+        },
+    },
+    ({ commercial, equipe }) => {
+        const scope = [commercial && `Commercial : ${commercial}`, equipe && `Équipe : ${equipe}`].filter(Boolean);
+        const perimeter = scope.length > 0 ? scope.join("\n") : "Toute l'entreprise";
+        return {
+            messages: [
+                {
+                    role: "user",
+                    content: { type: "text", text: `${WEEKLY_SALES_REVIEW}\n\n## Périmètre\n${perimeter}` },
+                },
+            ],
+        };
+    },
 );
 
 // ── Démarrage ─────────────────────────────────────────────────────────────────

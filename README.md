@@ -131,7 +131,11 @@ Redémarrer ensuite Claude pour charger la nouvelle version :
 
 Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va les interpréter. Exemples :
 
-> Les outils de création (`create_*`) affichent d'abord un aperçu : rien n'est créé dans Axelor tant que vous n'avez pas confirmé.
+> Les outils de création (`create_*`) affichent d'abord un aperçu : rien n'est créé dans Axelor tant que vous n'avez pas confirmé. Les identifiants qu'ils attendent (commercial, source, étape d'opportunité, devise, société…) sont retrouvés par Claude avec `list_reference`.
+
+**Référentiels**
+
+- `list_reference` - _"Quelles sont les étapes d'opportunité ?"_, _"Liste les commerciaux"_, _"Quelles sources de pistes existent ?"_ (utilisateurs, équipes, sociétés, devises, sources, statuts de piste, étapes et types d'opportunité, motifs de perte, conditions et modes de paiement ; renvoie les IDs attendus par les outils de création)
 
 **Partenaires**
 
@@ -147,6 +151,7 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 - `search_sale_orders` - _"Commandes confirmées non facturées du client Dupont depuis janvier 2025"_, _"Commandes confirmées pas encore livrées"_ (filtres : client, numéro, référence client, statut, facturation, livraison, période de confirmation, pagination)
 - `get_sale_order` - _"Donne-moi le détail complet de la commande SO-00042"_
 - `create_sale_order` - _"Crée un devis pour le client Dupont avec 2 jours de prestation"_
+- `search_sale_order_lines` - _"Qui a acheté le produit X cette année ?"_, _"Que commande habituellement Dupont, et à quel prix ?"_, _"À qui ai-je proposé X en devis ce trimestre ?"_ (filtres : produit, client, commercial, période, périmètre commandes / devis / tous, pagination)
 
 **Factures**
 
@@ -204,6 +209,8 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 
 **Dashboards**
 
+- `client_review` (prompt) - fiche de synthèse d'un client pour un commercial : CA et tendance, produits achetés, impayés, devis en attente, opportunités ouvertes, projets, prochaines actions. Paramètre : le nom du client.
+- `weekly_sales_review` (prompt) - revue commerciale de la semaine : commandes signées vs semaine précédente, devis à relancer, opportunités à closer, pistes chaudes. Paramètres optionnels : commercial, équipe.
 - `dashboard_guidelines` (prompt) - guide de bonnes pratiques à lancer avant de demander un dashboard : tools à utiliser pour chaque indicateur, périodes explicites, montants HT, aucun chiffre inventé, note de méthodologie. Dans Claude Desktop, il se lance depuis le bouton « + » de la zone de message, parmi les options du connecteur Axelor. Paramètre optionnel : le dashboard souhaité, par exemple _"CA et facturation par équipe sur le mois"_.
 - `render_diagram` - _"Ajoute un gantt des projets en retard"_, _"Montre la répartition du CA facturé par équipe en sankey"_ - transforme un diagramme en syntaxe Mermaid en image SVG avec la librairie [Pele](https://pele.run/), insérée directement dans le dashboard. Claude l'utilise de lui-même : tout dashboard de synthèse contient au moins un diagramme. Il choisit le type selon les données (camembert, évolution mensuelle, sankey, treemap, gantt, timeline, kanban…) ; les chiffres viennent toujours des autres outils.
 

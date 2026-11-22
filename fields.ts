@@ -15,6 +15,18 @@ export const CLASSES = {
     jobPosition: "com.axelor.apps.hr.db.JobPosition",
     projectTask: "com.axelor.apps.project.db.ProjectTask",
     traceBack: "com.axelor.apps.base.db.TraceBack",
+    // Référentiels (list_reference)
+    user: "com.axelor.auth.db.User",
+    team: "com.axelor.team.db.Team",
+    company: "com.axelor.apps.base.db.Company",
+    currency: "com.axelor.apps.base.db.Currency",
+    source: "com.axelor.apps.base.db.Source",
+    leadStatus: "com.axelor.apps.crm.db.LeadStatus",
+    opportunityStatus: "com.axelor.apps.crm.db.OpportunityStatus",
+    opportunityType: "com.axelor.apps.crm.db.OpportunityType",
+    lostReason: "com.axelor.apps.crm.db.LostReason",
+    paymentCondition: "com.axelor.apps.account.db.PaymentCondition",
+    paymentMode: "com.axelor.apps.account.db.PaymentMode",
 } as const;
 
 // ── Champs par modèle ─────────────────────────────────────────────────────────
@@ -197,6 +209,18 @@ export const SALE_ORDER_LINE_FIELDS = [
     "saleOrder.statusSelect",
     "saleOrder.clientPartner.name",
 ];
+
+// search_sale_order_lines : champs d'analyse + de quoi enchaîner sur get_partner / get_sale_order
+export const SALE_ORDER_LINE_SEARCH_FIELDS = [
+    ...SALE_ORDER_LINE_FIELDS,
+    "saleOrder.creationDate",
+    "saleOrder.clientPartner.id",
+    "saleOrder.salespersonUser.name",
+];
+
+// Référentiels (list_reference) : seulement les champs présents sur tous les modèles concernés
+export const REFERENCE_FIELDS = ["id", "name"];
+export const REFERENCE_CODE_FIELDS = ["id", "code", "name"];
 
 export const OPPORTUNITY_ANALYSIS_FIELDS = [
     "id",
