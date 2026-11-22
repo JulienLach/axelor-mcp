@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
     CLASSES,
     CONTACT_FIELDS,
+    EVENT_FIELDS,
     INVOICE_ANALYSIS_FIELDS,
     INVOICE_FIELDS,
     JOB_POSITION_FIELDS,
@@ -1164,6 +1165,120 @@ server.registerTool(
 
         const result = await axelorCreate(CLASSES.opportunity, data);
         return text(result ? JSON.stringify(result, null, 2) : "Échec de la création de l'opportunité.");
+    },
+);
+
+// ── Événements CRM (Event) ───────────────────────────────────────────────────
+
+/*
+  Valeurs standard d'AOS (EventRepository), à confirmer sur l'instance :
+  typeSelect   : 0 Événement, 1 Appel, 2 Rendez-vous, 3 Tâche, 5 Note
+  statusSelect : 1 Planifié, 2 Réalisé, 3 Annulé
+*/
+
+type EventRecord = {
+    id: number;
+    subject?: string;
+    typeSelect?: number;
+    statusSelect?: number;
+    startDateTime?: string;
+    user?: Ref;
+    partner?: Ref;
+    contactPartner?: Ref;
+    location?: string;
+    description?: string;
+};
+
+const EVENT_TYPES = { event: 0, call: 1, meeting: 2, task: 3, note: 5 } as const;
+const EVENT_TYPE_LABELS: Record<number, string> = { 0: "Événement", 1: "Appel", 2: "Rendez-vous", 3: "Tâche", 5: "Note" };
+const EVENT_STATUSES = { planned: 1, realized: 2, cancelled: 3 } as const;
+const EVENT_STATUS_LABELS: Record<number, string> = { 1: "Planifié", 2: "Réalisé", 3: "Annulé" };
+const EVENT_DESCRIPTION_MAX = 200;
+
+function formatEventLine(ev: EventRecord): string {
+    const when = ev.startDateTime?.replace("T", " ").slice(0, 16) ?? "sans date";
+    const type = EVENT_TYPE_LABELS[ev.typeSelect ?? -1] ?? `type ${ev.typeSelect}`;
+    const status = EVENT_STATUS_LABELS[ev.statusSelect ?? -1] ?? `statut ${ev.statusSelect}`;
+    const who = [refName(ev.partner), refName(ev.contactPartner) && `contact ${refName(ev.contactPartner)}`]
+        .filter(Boolean)
+        .join(", ");
+    const desc = ev.description?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    return [
+        `• ${when} — ${type} — ${status} — ${ev.subject ?? "(sans objet)"} [id ${ev.id}]`,
+        `  Tiers : ${who || "—"} | Responsable : ${refName(ev.user) ?? "non assigné"}${ev.location ? ` | Lieu : ${ev.location}` : ""}`,
+        desc ? `  ${desc.length > EVENT_DESCRIPTION_MAX ? `${desc.slice(0, EVENT_DESCRIPTION_MAX)}…` : desc}` : "",
+    ]
+        .filter(Boolean)
+        .join("\n");
+}
+
+server.registerTool(
+    "search_events",
+    {
+        description:
+            "Rechercher les événements CRM (appels, rendez-vous, tâches, notes) : relances en retard, prochains rendez-vous, historique des échanges et dernier contact avec un client. " +
+            "Filtres : type, statut, client (nom ou ID), responsable, période sur la date de début. overdueOnly = événements planifiés dont la date est passée. " +
+            "Tri : plus récents d'abord (ou plus anciens d'abord pour overdueOnly).",
+        inputSchema: {
+            type: z.enum(["call", "meeting", "task", "note", "event"]).optional().describe("Type d'événement (défaut : tous)"),
+            status: z.enum(["planned", "realized", "cancelled"]).optional().describe("Statut (défaut : tous)"),
+            partnerName: z.string().optional().describe("Nom (partiel) du client / prospect ou du contact"),
+            partnerId: z.number().optional().describe("ID du client (champ 'id' retourné par search_partners)"),
+            userName: z.string().optional().describe("Nom (partiel) du responsable"),
+            dateFrom: z.string().optional().describe("Date de début minimale (YYYY-MM-DD)"),
+            dateTo: z.string().optional().describe("Date de début maximale (YYYY-MM-DD)"),
+            overdueOnly: z
+                .boolean()
+                .optional()
+                .describe("Si true : uniquement les événements planifiés dont la date de début est passée (relances en retard)"),
+            limit: z.number().optional().describe("Nombre de résultats (défaut : 20)"),
+            offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
+        },
+        annotations: { readOnlyHint: true },
+    },
+    async ({ type, status, partnerName, partnerId, userName, dateFrom, dateTo, overdueOnly, limit = 20, offset = 0 }) => {
+        const criteria: Criterion[] = [NOT_ARCHIVED];
+        if (type) criteria.push({ fieldName: "typeSelect", operator: "=", value: EVENT_TYPES[type] });
+        if (status) criteria.push({ fieldName: "statusSelect", operator: "=", value: EVENT_STATUSES[status] });
+        if (partnerId) criteria.push({ fieldName: "partner.id", operator: "=", value: partnerId });
+        if (partnerName)
+            criteria.push({
+                operator: "or",
+                criteria: [
+                    { fieldName: "partner.name", operator: "like", value: `%${partnerName}%` },
+                    { fieldName: "contactPartner.name", operator: "like", value: `%${partnerName}%` },
+                ],
+            });
+        if (userName) criteria.push({ fieldName: "user.name", operator: "like", value: `%${userName}%` });
+        if (dateFrom) criteria.push({ fieldName: "startDateTime", operator: ">=", value: `${dateFrom}T00:00:00` });
+        if (dateTo) criteria.push({ fieldName: "startDateTime", operator: "<=", value: `${dateTo}T23:59:59` });
+        if (overdueOnly) {
+            // Axelor stocke les dates-heures en heure locale, toISOString() est en UTC : on compense le fuseau
+            const now = new Date();
+            const localNow = new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
+            criteria.push({ fieldName: "statusSelect", operator: "=", value: EVENT_STATUSES.planned });
+            criteria.push({ fieldName: "startDateTime", operator: "<", value: localNow });
+        }
+
+        let result: { data: unknown[]; total: number };
+        try {
+            result = await axelorSearch(CLASSES.event, EVENT_FIELDS, criteria, {
+                limit,
+                offset,
+                sortBy: [overdueOnly ? "startDateTime" : "-startDateTime"],
+            });
+        } catch (e) {
+            // Les champs d'Event varient selon la version d'AOS : renvoyer une erreur exploitable plutôt qu'un crash
+            return {
+                ...text(`Impossible de lire les événements CRM : ${(e as Error).message}. Le module CRM n'est peut-être pas installé, ou le modèle Event de cette instance n'a pas les champs attendus (${EVENT_FIELDS.join(", ")}).`),
+                isError: true,
+            };
+        }
+
+        const events = result.data as EventRecord[];
+        if (events.length === 0) return text("Aucun événement trouvé.");
+        const more = result.total > events.length ? `\n\n${events.length} affichés sur ${result.total} : utilise offset pour la suite.` : "";
+        return text(`${events.length} événement(s) sur ${result.total} :\n\n${events.map(formatEventLine).join("\n")}${more}`);
     },
 );
 
@@ -3271,6 +3386,7 @@ Prépare une fiche de synthèse sur un client pour un commercial, uniquement à 
 - **Dernières commandes et devis en attente** : \`search_sale_orders\` (clientName, limit 10), puis avec statusSelect finalized pour les devis envoyés non signés.
 - **Produits achetés** : \`search_sale_order_lines\` (clientId, scope orders, 12 derniers mois) : produits récurrents, prix pratiqués, remises.
 - **Facturation et impayés** : \`search_invoices\` (partnerName, unpaidOnly true) pour le reste dû ; avec dueDateTo = aujourd'hui pour la part échue.
+- **Échanges** : \`search_events\` (partnerId, status realized, limit 5) pour les derniers contacts, et (partnerId, status planned) pour les prochains rendez-vous ou relances.
 - **Pipeline** : \`search_opportunities\` (partnerName) : opportunités ouvertes, montant, étape, date de closing prévue.
 - **Projets et en-cours** : \`search_projects\` (clientName) et \`analyze_unbilled_time\` (clientName) si le client a des projets.
 
@@ -3278,7 +3394,7 @@ Prépare une fiche de synthèse sur un client pour un commercial, uniquement à 
 1. **Identité** : nom, type (client, prospect), commercial ou équipe si connus, principaux interlocuteurs.
 2. **Chiffres clés** : CA des 12 derniers mois et évolution, reste dû dont échu, pipeline ouvert, en-cours de temps non facturé.
 3. **Ce que le client achète** : top produits avec prix moyen et remise habituelle.
-4. **Points d'attention** : factures échues, devis sans suite depuis plus de 30 jours, opportunités dont la date de closing est dépassée, baisse de CA.
+4. **Points d'attention** : date du dernier contact, relances en retard, factures échues, devis sans suite depuis plus de 30 jours, opportunités dont la date de closing est dépassée, baisse de CA.
 5. **Prochaines actions** : 3 au maximum, chacune justifiée par une donnée ci-dessus.
 
 ## Règles
@@ -3294,12 +3410,13 @@ Prépare la revue hebdomadaire d'un commercial ou d'une équipe, uniquement à p
 - **Commandes signées** : \`analyze_sales\` (statusSelect confirmed et completed, semaine écoulée, groupBy salesperson, filtré par salespersonName ou teamName), puis la semaine précédente pour comparer.
 - **Devis à relancer** : \`search_sale_orders\` (statusSelect finalized) : devis envoyés non signés, en priorité ceux créés il y a plus de 15 jours.
 - **Pipeline** : \`analyze_opportunities\` (userName, groupBy status) pour le pipeline pondéré, puis \`search_opportunities\` (userName, closeDateTo = aujourd'hui + 7 jours) pour lister les opportunités dont la date de closing est dépassée ou tombe dans la semaine.
+- **Relances en retard** : \`search_events\` (userName, overdueOnly true) : appels, rendez-vous et tâches planifiés dont la date est passée.
 - **Pistes chaudes** : \`search_leads\` (userName, leadScoringSelect hot, isConverted false), et celles dont la date de contact est passée (contactDateTo = aujourd'hui).
 - **Produits vendus** : \`search_sale_order_lines\` (salespersonName, semaine écoulée) si l'utilisateur veut le détail.
 
 ## 2. Restituer
 1. **Résumé** en 3 à 5 lignes : signé cette semaine vs semaine précédente, pipeline pondéré, alertes.
-2. **Tableau des actions de la semaine** : devis à relancer, opportunités à closer ou à requalifier (date dépassée), pistes chaudes à appeler. Pour chacune : client, montant, ancienneté, action proposée.
+2. **Tableau des actions de la semaine** : relances en retard, devis à relancer, opportunités à closer ou à requalifier (date dépassée), pistes chaudes à appeler. Pour chacune : client, montant, ancienneté, action proposée.
 3. **Chiffres** : CA signé, nombre de commandes, panier moyen, pipeline pondéré.
 
 ## Règles

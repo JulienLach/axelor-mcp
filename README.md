@@ -180,6 +180,7 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 **Pistes CRM**
 
 - `search_leads` - _"Montre-moi les pistes chaudes non converties assignées à Julien"_, _"Pistes créées cette semaine"_, _"Pistes dont la date de contact est passée"_ (filtres : nom, entreprise, responsable, scoring, conversion, nurturing, date de création, date de contact, archivé, pagination)
+- `search_events` - _"Mes relances en retard"_, _"Quand a-t-on eu Dupont pour la dernière fois ?"_, _"Mes rendez-vous de la semaine prochaine"_ (appels, rendez-vous, tâches, notes ; filtres : type, statut, client, responsable, période, overdueOnly, pagination)
 - `get_lead` - _"Détails de la piste Jean Dupont chez ABC"_
 - `create_lead` - _"Crée une piste pour Jean Dupont de la société ABC, email jean@abc.fr"_
 
@@ -211,8 +212,8 @@ Une fois connecté, vous pouvez faire vos demandes en langage naturel, le MCP va
 
 **Dashboards**
 
-- `client_review` (prompt) - fiche de synthèse d'un client pour un commercial : interlocuteurs, CA et tendance, produits achetés, impayés, devis en attente, opportunités ouvertes, projets, prochaines actions. Paramètre : le nom du client.
-- `weekly_sales_review` (prompt) - revue commerciale de la semaine : commandes signées vs semaine précédente, devis à relancer, opportunités à closer, pistes chaudes. Paramètres optionnels : commercial, équipe.
+- `client_review` (prompt) - fiche de synthèse d'un client pour un commercial : interlocuteurs, CA et tendance, produits achetés, derniers échanges, impayés, devis en attente, opportunités ouvertes, projets, prochaines actions. Paramètre : le nom du client.
+- `weekly_sales_review` (prompt) - revue commerciale de la semaine : commandes signées vs semaine précédente, relances en retard, devis à relancer, opportunités à closer, pistes chaudes. Paramètres optionnels : commercial, équipe.
 - `dashboard_guidelines` (prompt) - guide de bonnes pratiques à lancer avant de demander un dashboard : tools à utiliser pour chaque indicateur, périodes explicites, montants HT, aucun chiffre inventé, note de méthodologie. Dans Claude Desktop, il se lance depuis le bouton « + » de la zone de message, parmi les options du connecteur Axelor. Paramètre optionnel : le dashboard souhaité, par exemple _"CA et facturation par équipe sur le mois"_.
 - `render_diagram` - _"Ajoute un gantt des projets en retard"_, _"Montre la répartition du CA facturé par équipe en sankey"_ - transforme un diagramme en syntaxe Mermaid en image SVG avec la librairie [Pele](https://pele.run/), insérée directement dans le dashboard. Claude l'utilise de lui-même : tout dashboard de synthèse contient au moins un diagramme. Il choisit le type selon les données (camembert, évolution mensuelle, sankey, treemap, gantt, timeline, kanban…) ; les chiffres viennent toujours des autres outils.
 

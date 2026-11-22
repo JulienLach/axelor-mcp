@@ -15,6 +15,7 @@ export const CLASSES = {
     jobPosition: "com.axelor.apps.hr.db.JobPosition",
     projectTask: "com.axelor.apps.project.db.ProjectTask",
     traceBack: "com.axelor.apps.base.db.TraceBack",
+    event: "com.axelor.apps.crm.db.Event",
     // Référentiels (list_reference)
     user: "com.axelor.auth.db.User",
     team: "com.axelor.team.db.Team",
@@ -236,6 +237,21 @@ export const SALE_ORDER_LINE_SEARCH_FIELDS = [
 // Référentiels (list_reference) : seulement les champs présents sur tous les modèles concernés
 export const REFERENCE_FIELDS = ["id", "name"];
 export const REFERENCE_CODE_FIELDS = ["id", "code", "name"];
+
+// search_events : champs standard d'AOS, non vérifiés par export sur l'instance cliente
+export const EVENT_FIELDS = [
+    "id",
+    "subject",
+    "typeSelect",
+    "statusSelect",
+    "startDateTime",
+    "endDateTime",
+    "user",
+    "partner",
+    "contactPartner",
+    "location",
+    "description",
+];
 
 export const OPPORTUNITY_ANALYSIS_FIELDS = [
     "id",
