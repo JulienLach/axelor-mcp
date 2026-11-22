@@ -4,6 +4,7 @@ import { PeleError, render } from "pele";
 import { z } from "zod";
 import {
     CLASSES,
+    CONTACT_FIELDS,
     INVOICE_ANALYSIS_FIELDS,
     INVOICE_FIELDS,
     JOB_POSITION_FIELDS,
@@ -286,6 +287,45 @@ server.registerTool(
     async ({ id }) => {
         const partner = await axelorGetById(CLASSES.partner, id);
         return text(partner ? JSON.stringify(partner, null, 2) : `Partenaire ID ${id} introuvable.`);
+    },
+);
+
+server.registerTool(
+    "search_contacts",
+    {
+        description:
+            "Rechercher les contacts (interlocuteurs) d'une société cliente, fournisseur ou prospect : fonction, service, téléphones, email. " +
+            "Filtrer par société (nom ou ID retourné par search_partners) et/ou par nom, email ou téléphone du contact. Les contacts archivés sont exclus.",
+        inputSchema: {
+            companyName: z.string().optional().describe("Nom (partiel) de la société du contact"),
+            companyId: z.number().optional().describe("ID de la société (champ 'id' retourné par search_partners)"),
+            query: z.string().optional().describe("Nom, email ou téléphone (partiel) du contact"),
+            limit: z.number().optional().describe("Nombre de résultats (défaut : 50)"),
+            offset: z.number().optional().describe("Décalage pour la pagination (défaut : 0)"),
+        },
+        annotations: { readOnlyHint: true },
+    },
+    async ({ companyName, companyId, query, limit = 50, offset = 0 }) => {
+        const criteria: Criterion[] = [{ fieldName: "isContact", operator: "=", value: true }, NOT_ARCHIVED];
+        if (companyId) criteria.push({ fieldName: "mainPartner.id", operator: "=", value: companyId });
+        if (companyName)
+            criteria.push({ fieldName: "mainPartner.name", operator: "like", value: `%${companyName}%` });
+        if (query)
+            criteria.push({
+                operator: "or",
+                criteria: ["fullName", "emailAddress.address", "fixedPhone", "mobilePhone"].map((fieldName) => ({
+                    fieldName,
+                    operator: "like",
+                    value: `%${query}%`,
+                })),
+            });
+
+        const { data, total } = await axelorSearch(CLASSES.partner, CONTACT_FIELDS, criteria, {
+            limit,
+            offset,
+            sortBy: ["fullName"],
+        });
+        return text(formatResult("contact", data, total));
     },
 );
 
@@ -3061,6 +3101,7 @@ Prépare une fiche de synthèse sur un client pour un commercial, uniquement à 
 - Les filtres \`clientName\` / \`partnerName\` des autres tools sont des recherches partielles : utilise le nom exact, et signale si des homonymes risquent de fausser les chiffres.
 
 ## 2. Collecter
+- **Interlocuteurs** : \`search_contacts\` (companyId) : nom, fonction, téléphone, email.
 - **Chiffre d'affaires** : \`analyze_sales\` (clientName, statusSelect confirmed et completed, groupBy month, 12 derniers mois), puis la même période un an plus tôt pour la tendance.
 - **Dernières commandes et devis en attente** : \`search_sale_orders\` (clientName, limit 10), puis avec statusSelect finalized pour les devis envoyés non signés.
 - **Produits achetés** : \`search_sale_order_lines\` (clientId, scope orders, 12 derniers mois) : produits récurrents, prix pratiqués, remises.
@@ -3069,7 +3110,7 @@ Prépare une fiche de synthèse sur un client pour un commercial, uniquement à 
 - **Projets et en-cours** : \`search_projects\` (clientName) et \`analyze_unbilled_time\` (clientName) si le client a des projets.
 
 ## 3. Restituer
-1. **Identité** : nom, type (client, prospect), commercial ou équipe si connus.
+1. **Identité** : nom, type (client, prospect), commercial ou équipe si connus, principaux interlocuteurs.
 2. **Chiffres clés** : CA des 12 derniers mois et évolution, reste dû dont échu, pipeline ouvert, en-cours de temps non facturé.
 3. **Ce que le client achète** : top produits avec prix moyen et remise habituelle.
 4. **Points d'attention** : factures échues, devis sans suite depuis plus de 30 jours, opportunités dont la date de closing est dépassée, baisse de CA.

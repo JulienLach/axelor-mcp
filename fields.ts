@@ -68,6 +68,21 @@ export const PARTNER_FIELDS = [
     "updatedOn",
 ];
 
+// search_contacts : un contact est un Partner (isContact = true) rattaché à sa société par mainPartner
+export const CONTACT_FIELDS = [
+    "id",
+    "fullName",
+    "titleSelect",
+    "jobTitle",
+    "department",
+    "fixedPhone",
+    "mobilePhone",
+    "emailAddress.address",
+    "mainPartner",
+    "description",
+    "updatedOn",
+];
+
 export const PRODUCT_FIELDS = [
     "id",
     "code",

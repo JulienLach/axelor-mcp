@@ -12,6 +12,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 - **`list_reference`**: lists the values of a reference model with their IDs (users, teams, companies, currencies, sources, lead statuses, opportunity statuses and types, lost reasons, payment conditions and modes), so `create_lead`, `create_opportunity` and `create_sale_order` no longer need IDs to be guessed. A model missing from the instance returns an actionable error instead of failing.
 - **`search_sale_order_lines`**: searches quote and order lines by product, client, salesperson and period, with a `scope` of confirmed orders (filtered on order date), quotes (filtered on creation date) or both. Each line carries the client and order IDs to chain with `get_partner` / `get_sale_order`.
+- **`search_contacts`**: lists a company's contacts (Partner with `isContact`, linked through `mainPartner`), with job title, department, phones and email; filters by company name or ID and by contact name, email or phone. Archived contacts are excluded. `client_review` now lists the client's contacts.
 - **`client_review` and `weekly_sales_review` prompts**: guided client summary and weekly sales review built from the existing tools.
 - New tools declare the MCP `readOnlyHint` annotation.
 
